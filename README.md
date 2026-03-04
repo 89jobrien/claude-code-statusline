@@ -31,8 +31,6 @@ Install with one command. Works immediately. Configure when you need it.
 curl -fsSL https://raw.githubusercontent.com/glauberlima/claude-code-statusline/main/install.sh | bash
 ```
 
-**Requirements**: bash, jq, git (the installer checks and shows install commands if needed)
-
 ## Features
 
 - 📁 **Directory name**
@@ -46,47 +44,13 @@ curl -fsSL https://raw.githubusercontent.com/glauberlima/claude-code-statusline/
 
 ## ⚙️ Configuration
 
-### Change Language or Toggle Components
-
-**Option 1: Use the installer** (recommended for initial setup):
+Re-run the installer to change language or toggle features:
 
 ```bash
 ./install.sh
 ```
-
-The installer lets you:
-- Select language (🇺🇸 English | 🇧🇷 Português | 🇪🇸 Español)
-- Enable/disable context messages
-- Enable/disable cost display
-
-**Option 2: Use the patch script** (for manual customization):
-
-```bash
-# Patch to Portuguese with all features
-./patch-statusline.sh ~/.claude/statusline.sh messages/pt.json
-
-# Disable messages
-./patch-statusline.sh ~/.claude/statusline.sh --no-messages
-
-# Spanish with cost tracking only
-./patch-statusline.sh ~/.claude/statusline.sh messages/es.json --no-messages
-```
-
-The patch script creates a fully optimized, static version with zero runtime overhead. To change settings, re-run the patch.
-
-### Add a Language
-
-See [messages/README.md](messages/README.md) for translation guidelines.
 
 ## 🛠️ Development
-
-### From Source
-
-```bash
-git clone https://github.com/glauberlima/claude-code-statusline.git
-cd claude-code-statusline
-./install.sh
-```
 
 ### Testing
 
