@@ -46,7 +46,9 @@ is_wsl() {
 
 
 cleanup_temp() {
-  [[ -n "${TEMP_DIR}" ]] && [[ -d "${TEMP_DIR}" ]] && rm -rf "${TEMP_DIR}"
+  if [[ -n "${TEMP_DIR}" ]] && [[ -d "${TEMP_DIR}" ]]; then
+    rm -rf "${TEMP_DIR}"
+  fi
 }
 
 cleanup_on_error() {
