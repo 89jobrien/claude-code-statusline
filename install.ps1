@@ -448,9 +448,8 @@ function Install-Statusline {
 function Set-ClaudeSettings {
     param([string]$BashExe)
 
-    # The command Claude Code executes: full path to bash + script path.
-    # Quote the bash path to handle "Program Files" and similar paths with spaces.
-    $statusLineCommand = "`"$BashExe`" ~/.claude/statusline.sh"
+    # The command Claude Code executes: tilde path that Claude Code resolves natively.
+    $statusLineCommand = '~/.claude/statusline.sh'
 
     if (-not (Test-Path $SettingsFile)) {
         Set-Content -Path $SettingsFile -Value '{}' -Encoding UTF8
@@ -558,7 +557,7 @@ function Main {
         Write-Host '   {'
         Write-Host '     "statusLine": {'
         Write-Host '       "type": "command",'
-        Write-Host "       `"command`": `"`"$BashExePath`" ~/.claude/statusline.sh`","
+        Write-Host '       "command": "~/.claude/statusline.sh",'
         Write-Host '       "padding": 0'
         Write-Host '     }'
         Write-Host '   }'

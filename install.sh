@@ -10,7 +10,7 @@ set -euo pipefail
 readonly TARGET_DIR="${HOME}/.claude"
 readonly TARGET_FILE="${TARGET_DIR}/statusline.sh"
 readonly SETTINGS_FILE="${HOME}/.claude/settings.json"
-readonly SETTINGS_COMMAND="${HOME}/.claude/statusline.sh"
+readonly SETTINGS_COMMAND='~/.claude/statusline.sh'
 readonly GITHUB_BASE_URL="https://raw.githubusercontent.com/glauberlima/claude-code-statusline/refs/heads/main"
 readonly EXIT_PARTIAL_FAILURE=2
 readonly MAX_DOWNLOAD_RETRIES=3
