@@ -260,18 +260,21 @@ download_file() {
 
 validate_file() {
   local file="$1"
+  local content
 
   if [[ ! -s "${file}" ]]; then
     error "File does not exist or is empty"
     return 1
   fi
 
-  if ! head -n1 "${file}" 2>/dev/null | grep -q '^#!/.*bash'; then
+  content=$(cat "${file}" 2>/dev/null) || return 1
+
+  if ! echo "${content}" | head -n1 | grep -q '^#!/.*bash'; then
     error "Invalid file format (missing bash shebang)"
     return 1
   fi
 
-  if ! grep -q 'assemble_statusline' "${file}" 2>/dev/null; then
+  if ! echo "${content}" | grep -q 'assemble_statusline'; then
     error "File does not appear to be statusline.sh"
     return 1
   fi
@@ -499,13 +502,6 @@ NODEEOF
     rm -f "${temp_file}"
     return 1
   }
-
-  # shellcheck disable=SC2310
-  if ! validate_json "${temp_file}"; then
-    error "Generated invalid JSON"
-    rm -f "${temp_file}"
-    return 1
-  fi
 
   mv "${temp_file}" "${SETTINGS_FILE}" || {
     error "Failed to write settings.json"

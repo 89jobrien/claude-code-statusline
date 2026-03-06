@@ -237,14 +237,14 @@ function Show-InstallInstructions {
 function Invoke-DownloadFile {
     param([string]$Url, [string]$Dest)
 
+    $ProgressPreference = 'SilentlyContinue'  # suppress verbose progress bar
     for ($attempt = 1; $attempt -le $MaxDownloadRetries; $attempt++) {
         try {
-            $ProgressPreference = 'SilentlyContinue'  # suppress verbose progress bar
             Invoke-WebRequest -Uri $Url -OutFile $Dest -UseBasicParsing -ErrorAction Stop
-            $ProgressPreference = 'Continue'
             break
         } catch {
             if ($attempt -ge $MaxDownloadRetries) {
+                $ProgressPreference = 'Continue'
                 Write-Err "Failed to download from $Url"
                 Write-Info 'Check your internet connection and try again'
                 return $false
@@ -252,6 +252,7 @@ function Invoke-DownloadFile {
             Start-Sleep -Seconds 1
         }
     }
+    $ProgressPreference = 'Continue'
 
     if (-not (Test-Path $Dest) -or (Get-Item $Dest).Length -eq 0) {
         Write-Err 'Downloaded file is empty'
@@ -268,13 +269,12 @@ function Test-StatuslineFile {
         return $false
     }
 
-    $firstLine = Get-Content $File -First 1 -ErrorAction SilentlyContinue
-    if ($firstLine -notmatch '^#!/.*bash') {
+    $content = Get-Content $File -Raw -ErrorAction SilentlyContinue
+    if ($content -notmatch '(?m)^#!/.*bash') {
         Write-Err 'Invalid file format (missing bash shebang)'
         return $false
     }
 
-    $content = Get-Content $File -Raw -ErrorAction SilentlyContinue
     if ($content -notmatch 'assemble_statusline') {
         Write-Err 'File does not appear to be statusline.sh'
         return $false
@@ -446,8 +446,6 @@ function Install-Statusline {
 }
 
 function Set-ClaudeSettings {
-    param([string]$BashExe)
-
     # The command Claude Code executes: tilde path that Claude Code resolves natively.
     $statusLineCommand = '~/.claude/statusline.sh'
 
@@ -483,14 +481,6 @@ fs.writeFileSync(dest, JSON.stringify(settings, null, 2) + '\n', 'utf8');
     & node -e $nodeScript $SettingsFile $statusLineCommand $tempFile 2>$null
     if ($LASTEXITCODE -ne 0) {
         Write-Err 'Failed to update configuration'
-        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
-        return $false
-    }
-
-    # Validate generated JSON before overwriting
-    & node -e "try{JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.exit(0)}catch(e){process.exit(1)}" $tempFile 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Err 'Generated invalid JSON'
         Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
         return $false
     }
@@ -550,7 +540,7 @@ function Main {
     if (-not (Install-Statusline $statuslineSrc)) { Invoke-CleanupOnError }
     Write-Success "Installed to $TargetFile"
 
-    if (-not (Set-ClaudeSettings $BashExePath)) {
+    if (-not (Set-ClaudeSettings)) {
         Write-Warn 'Installation succeeded, but automatic configuration failed'
         Write-Host ''
         Write-Host 'Please manually add to ~/.claude/settings.json:'
