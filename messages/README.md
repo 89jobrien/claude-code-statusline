@@ -82,7 +82,7 @@ Messages should follow a thematic escalation:
 
 3. **Validate JSON**:
    ```bash
-   jq empty messages/de.json
+   node -e "JSON.parse(require('fs').readFileSync('messages/de.json','utf8'))" 2>/dev/null && echo ok
    ```
 
 4. **Test with installer**:
@@ -92,7 +92,7 @@ Messages should follow a thematic escalation:
 
 5. **Update installer**:
 
-   **install.sh** (around line 480):
+   In the `prompt_language_selection()` function in **install.sh**:
    ```bash
    local available_languages=("en" "pt" "es" "de")
    ```
@@ -109,7 +109,7 @@ Messages should follow a thematic escalation:
 
 ```bash
 # Validate JSON syntax
-jq empty messages/your-lang.json
+node -e "JSON.parse(require('fs').readFileSync('messages/your-lang.json','utf8'))" 2>/dev/null && echo ok
 
 # Install and test with your language
 ./install.sh

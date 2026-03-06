@@ -126,6 +126,7 @@ statusline.sh (Portuguese, fully static)
 - Configuration flags (`SHOW_MESSAGES`, `SHOW_COST`) hardcoded via `@CONFIG_START` / `@CONFIG_END` markers
 - `patch-statusline.sh` script replaces marker blocks to create optimized versions
 - **Zero runtime overhead** - no config loading, no JSON parsing during execution
+- **Both flags default to `false`** in the base script. The installer (or `patch-statusline.sh`) enables them during setup.
 
 ### Language Files Structure
 
@@ -319,10 +320,7 @@ Test complete statusline with JSON fixtures:
 - Various git states (clean, dirty, not repo)
 - Null values, edge cases
 - Over-limit context usage
-- **Language configuration**:
-  - Statusline works with each language (en, pt, es)
-  - Fallback to default language when config missing
-  - Invalid language code handling
+- **Unicode rendering**: Progress bar filled (`█`) and empty (`░`) blocks appear in output
 - **Security validation**:
   - Path traversal prevention
   - Format string injection prevention

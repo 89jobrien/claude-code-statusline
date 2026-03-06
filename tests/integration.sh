@@ -56,43 +56,7 @@ run_test() {
   return 0  # Always return 0 to prevent set -e from exiting script early
 }
 
-# Main test suite
-# Test helper for config tests
-test_with_config() {
-  local test_name="$1"
-  local config_content="$2"
-  local json_input="$3"
-
-  TOTAL=$((TOTAL + 1))
-
-  local temp_config
-  temp_config=$(mktemp)
-  echo "${config_content}" > "${temp_config}"
-
-  local output exit_code=0
-  CONFIG_FILE="${temp_config}" MESSAGES_DIR="${SCRIPT_DIR}/messages" \
-    output=$(echo "${json_input}" | "${SCRIPT_DIR}/statusline.sh" 2>&1) || exit_code=$?
-
-  rm -f "${temp_config}"
-
-  if [[ ${exit_code} -eq 0 ]]; then
-    echo -e "${GREEN}✓${NC} ${test_name}"
-    PASSED=$((PASSED + 1))
-  else
-    echo -e "${RED}✗${NC} ${test_name}"
-    echo "  Exit code: ${exit_code}"
-    echo "  Output: ${output}"
-    FAILED=$((FAILED + 1))
-  fi
-
-  return 0
-}
-
 main() {
-  # Set up test environment for i18n
-  export MESSAGES_DIR="${SCRIPT_DIR}/messages"
-  export CONFIG_FILE="/dev/null"  # No config file in tests, use default language
-
   echo -e "${YELLOW}=== Statusline Integration Tests ===${NC}"
   echo "Testing improvements to statusline.sh"
   echo ""
@@ -196,7 +160,7 @@ main() {
   echo ""
   echo -e "${YELLOW}=== Security Tests ===${NC}"
 
-  # Test 8: Directory traversal attack
+  # Test 9: Directory traversal attack
   run_test "Security: Directory traversal (../../../../etc)" '{
     "model": {"display_name": "Test"},
     "workspace": {"current_dir": "../../../../etc"},
@@ -206,7 +170,7 @@ main() {
     }
   }'
 
-  # Test 9: Absolute path attack
+  # Test 10: Absolute path attack
   run_test "Security: Absolute path (/tmp/malicious)" '{
     "model": {"display_name": "Test"},
     "workspace": {"current_dir": "/tmp/malicious"},
@@ -216,7 +180,7 @@ main() {
     }
   }'
 
-  # Test 10: Format string injection in cost
+  # Test 11: Format string injection in cost
   run_test "Security: Format string injection (%x %x %x)" '{
     "model": {"display_name": "Test"},
     "workspace": {"current_dir": "."},
@@ -227,7 +191,7 @@ main() {
     "cost": {"total_cost_usd": "%x %x %x"}
   }'
 
-  # Test 11: Tilde path expansion
+  # Test 12: Tilde path expansion
   run_test "Security: Tilde path (~/.ssh)" '{
     "model": {"display_name": "Test"},
     "workspace": {"current_dir": "~/.ssh"},
@@ -237,7 +201,7 @@ main() {
     }
   }'
 
-  # Test 12: Invalid cost values
+  # Test 13: Invalid cost values
   run_test "Security: Non-numeric cost (malicious)" '{
     "model": {"display_name": "Test"},
     "workspace": {"current_dir": "."},
@@ -248,156 +212,76 @@ main() {
     "cost": {"total_cost_usd": "malicious_string"}
   }'
 
-  # Test 13-15: Language configuration tests
-  echo -e "\n${YELLOW}=== Language Configuration Tests ===${NC}"
+  # Unicode Character Tests
+  # Note: language is statically compiled into statusline.sh via patch-statusline.sh.
+  # Dynamic language switching via env vars is not supported at runtime.
+  echo -e "\n${YELLOW}=== Unicode Character Tests ===${NC}"
 
-  # Test 13: Statusline works with English language config
-  temp_config=$(mktemp)
-  echo "readonly STATUSLINE_LANGUAGE=\"en\"" > "${temp_config}"
-  MESSAGES_DIR="${SCRIPT_DIR}/messages" CONFIG_FILE="${temp_config}" run_test "Language config: English" '{
+  # Test 14: Filled blocks appear at 50% context
+  run_test "Unicode: filled blocks (█) appear at 50% context" '{
+    "model": {"display_name": "Test"},
+    "workspace": {"current_dir": "."},
+    "context_window": {
+      "context_window_size": 200000,
+      "current_usage": {"input_tokens": 100000}
+    }
+  }' "█"
+
+  # Test 15: Empty blocks appear at 5% context
+  run_test "Unicode: empty blocks (░) appear at 5% context" '{
     "model": {"display_name": "Test"},
     "workspace": {"current_dir": "."},
     "context_window": {
       "context_window_size": 200000,
       "current_usage": {"input_tokens": 10000}
     }
-  }'
-  rm -f "${temp_config}"
+  }' "░"
 
-  # Test 14: Statusline works with Portuguese language config
-  temp_config=$(mktemp)
-  echo "readonly STATUSLINE_LANGUAGE=\"pt\"" > "${temp_config}"
-  MESSAGES_DIR="${SCRIPT_DIR}/messages" CONFIG_FILE="${temp_config}" run_test "Language config: Portuguese" '{
+  # Test 16: Near-full bar at 95% context still shows filled blocks
+  run_test "Unicode: near-full bar (95% context) shows filled blocks" '{
     "model": {"display_name": "Test"},
     "workspace": {"current_dir": "."},
     "context_window": {
       "context_window_size": 200000,
-      "current_usage": {"input_tokens": 10000}
+      "current_usage": {"input_tokens": 190000}
     }
-  }'
-  rm -f "${temp_config}"
+  }' "█"
 
-  # Test 15: Statusline works with Spanish language config
-  temp_config=$(mktemp)
-  echo "readonly STATUSLINE_LANGUAGE=\"es\"" > "${temp_config}"
-  MESSAGES_DIR="${SCRIPT_DIR}/messages" CONFIG_FILE="${temp_config}" run_test "Language config: Spanish" '{
+  # Default Behavior Tests
+  # Note: SHOW_MESSAGES and SHOW_COST are hardcoded constants in statusline.sh (both false
+  # by default in the base script). Feature toggling requires patching via patch-statusline.sh.
+  echo -e "\n${YELLOW}=== Default Behavior Tests ===${NC}"
+
+  # Test 17: Model name appears in output
+  run_test "Default: model name appears in output" '{
+    "model": {"display_name": "UniqueModelName"},
+    "workspace": {"current_dir": "."},
+    "context_window": {
+      "context_window_size": 200000,
+      "current_usage": {"input_tokens": 50000}
+    }
+  }' "UniqueModelName"
+
+  # Test 18: Directory name appears in output
+  run_test "Default: directory name appears in output" '{
+    "model": {"display_name": "Test"},
+    "workspace": {"current_dir": "/home/user/myproject"},
+    "context_window": {
+      "context_window_size": 200000,
+      "current_usage": {"input_tokens": 50000}
+    }
+  }' "myproject"
+
+  # Test 19: Cost data present but SHOW_COST=false — script still exits 0
+  run_test "Default: cost data present, script exits cleanly" '{
     "model": {"display_name": "Test"},
     "workspace": {"current_dir": "."},
     "context_window": {
       "context_window_size": 200000,
-      "current_usage": {"input_tokens": 10000}
-    }
+      "current_usage": {"input_tokens": 50000}
+    },
+    "cost": {"total_cost_usd": 9.99}
   }'
-  rm -f "${temp_config}"
-
-  # Test 16: Fallback to default language when config missing
-  CONFIG_FILE="/nonexistent/config" MESSAGES_DIR="${SCRIPT_DIR}/messages" run_test "Language fallback: Missing config" '{
-    "model": {"display_name": "Test"},
-    "workspace": {"current_dir": "."},
-    "context_window": {
-      "context_window_size": 200000,
-      "current_usage": {"input_tokens": 10000}
-    }
-  }'
-
-  # Test 17-18: Hardcoded character tests (config override removed)
-  echo -e "\n${YELLOW}=== Hardcoded Character Tests ===${NC}"
-
-  # Test 17: Statusline always uses hardcoded Unicode characters (ignores config)
-  # Even if config tries to override with ASCII, statusline should use Unicode
-  test_with_config "Always uses Unicode █/░ (ignores config)" \
-    "readonly STATUSLINE_LANGUAGE=\"en\"
-readonly BAR_FILLED=\"#\"
-readonly BAR_EMPTY=\"-\"" \
-    '{
-      "model": {"display_name": "Test"},
-      "workspace": {"current_dir": "."},
-      "context_window": {
-        "context_window_size": 200000,
-        "current_usage": {"input_tokens": 10000}
-      }
-    }'
-
-  # Test 18: Works without character definitions in config
-  test_with_config "Works without character config" \
-    "readonly STATUSLINE_LANGUAGE=\"en\"" \
-    '{
-      "model": {"display_name": "Test"},
-      "workspace": {"current_dir": "."},
-      "context_window": {
-        "context_window_size": 200000,
-        "current_usage": {"input_tokens": 10000}
-      }
-    }'
-
-  # Test 19-20: UTF-8 character rendering tests
-  echo -e "\n${YELLOW}=== UTF-8 Character Rendering Tests ===${NC}"
-
-  # Test 19: Unicode progress bar rendering in full statusline
-  test_with_config "Unicode progress bar renders correctly" \
-    "readonly STATUSLINE_LANGUAGE=\"en\"" \
-    '{
-      "model": {"display_name": "Test"},
-      "workspace": {"current_dir": "."},
-      "context_window": {
-        "context_window_size": 200000,
-        "current_usage": {"input_tokens": 100000}
-      }
-    }'
-
-  # Test 20: High context usage (near 100%) with Unicode
-  test_with_config "High context usage with Unicode" \
-    "readonly STATUSLINE_LANGUAGE=\"en\"" \
-    '{
-      "model": {"display_name": "Test"},
-      "workspace": {"current_dir": "."},
-      "context_window": {
-        "context_window_size": 200000,
-        "current_usage": {"input_tokens": 190000}
-      }
-    }'
-
-  echo -e "\n${YELLOW}=== Component Toggle Tests ===${NC}"
-
-  # Test JSON fixtures
-  local test_json='{"model":{"display_name":"Test"},"workspace":{"current_dir":"."},"context_window":{"context_window_size":200000,"current_usage":{"input_tokens":50000}}}'
-  local test_json_with_cost='{"model":{"display_name":"Test"},"workspace":{"current_dir":"."},"context_window":{"context_window_size":200000,"current_usage":{"input_tokens":50000}},"cost":{"total_cost_usd":1.50}}'
-
-  # Test 1: Messages disabled
-  temp_config=$(mktemp)
-  cat > "${temp_config}" <<'EOF'
-readonly STATUSLINE_LANGUAGE="en"
-readonly STATUSLINE_SHOW_MESSAGES="false"
-readonly STATUSLINE_SHOW_COST="true"
-EOF
-  MESSAGES_DIR="${SCRIPT_DIR}/messages" CONFIG_FILE="${temp_config}" run_test "Component: Messages disabled" "${test_json}"
-  rm -f "${temp_config}"
-
-  # Test 2: Cost disabled
-  temp_config=$(mktemp)
-  cat > "${temp_config}" <<'EOF'
-readonly STATUSLINE_LANGUAGE="en"
-readonly STATUSLINE_SHOW_MESSAGES="true"
-readonly STATUSLINE_SHOW_COST="false"
-EOF
-  MESSAGES_DIR="${SCRIPT_DIR}/messages" CONFIG_FILE="${temp_config}" run_test "Component: Cost disabled" "${test_json_with_cost}"
-  rm -f "${temp_config}"
-
-  # Test 3: Both disabled
-  temp_config=$(mktemp)
-  cat > "${temp_config}" <<'EOF'
-readonly STATUSLINE_LANGUAGE="en"
-readonly STATUSLINE_SHOW_MESSAGES="false"
-readonly STATUSLINE_SHOW_COST="false"
-EOF
-  MESSAGES_DIR="${SCRIPT_DIR}/messages" CONFIG_FILE="${temp_config}" run_test "Component: Both disabled" "${test_json_with_cost}"
-  rm -f "${temp_config}"
-
-  # Test 4: Backwards compatibility
-  temp_config=$(mktemp)
-  echo 'readonly STATUSLINE_LANGUAGE="pt"' > "${temp_config}"
-  MESSAGES_DIR="${SCRIPT_DIR}/messages" CONFIG_FILE="${temp_config}" run_test "Component: Backwards compat" "${test_json}"
-  rm -f "${temp_config}"
 
   # Summary
   echo -e "\n${YELLOW}=== Test Summary ===${NC}"
