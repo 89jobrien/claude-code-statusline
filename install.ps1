@@ -122,11 +122,7 @@ function Invoke-CleanupOnError {
 # ============================================================================
 
 function Get-BashExePath {
-    # 1. bash on PATH (preferred — respects user's own setup)
-    $cmd = Get-Command bash -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-
-    # 2. Known Git Bash locations
+    # 1. Known Git Bash locations (preferred — compatible with ConvertTo-BashPath /c/... style)
     $candidates = @(
         "$env:ProgramFiles\Git\bin\bash.exe",
         "$env:ProgramFiles\Git\usr\bin\bash.exe",
@@ -137,7 +133,20 @@ function Get-BashExePath {
     $x86 = ${env:ProgramFiles(x86)}
     if ($x86) { $candidates += "$x86\Git\bin\bash.exe" }
 
-    return $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $gitBash = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($gitBash) { return $gitBash }
+
+    # 2. bash on PATH — only if it's not WSL bash (WSL bash uses /mnt/c/ mount style,
+    #    incompatible with ConvertTo-BashPath which produces /c/... paths)
+    $cmd = Get-Command bash -ErrorAction SilentlyContinue
+    if ($cmd) {
+        $bashPath = $cmd.Source
+        if ($bashPath -notlike '*\Windows\System32\*') {
+            return $bashPath
+        }
+    }
+
+    return $null
 }
 
 function Test-GitVersion {
