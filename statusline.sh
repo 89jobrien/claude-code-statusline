@@ -62,15 +62,6 @@ readonly CONTEXT_MSG_CRITICAL=('living dangerously' 'pushing the limits' 'housto
 get_dirname() { local p="${1//\\//}"; echo "${p##*/}"; }
 sep() { echo -n " ${SEPARATOR} "; }
 
-# Conditional append helper (DRY pattern)
-append_if() {
-  local value="$1"
-  local text="$2"
-  if [[ "${value}" != "0" ]] 2>/dev/null && [[ -n "${value}" ]] && [[ "${value}" != "${NULL_VALUE}" ]]; then
-    echo -n " ${text}"
-  fi
-}
-
 # Validate directory path for security
 # Rejects path traversal (..), tilde expansion (~), and shell metacharacters
 validate_directory() {
@@ -127,6 +118,23 @@ format_number() {
   fi
 }
 
+clamp_percent() {
+  local percent="$1"
+
+  if [[ ! "${percent}" =~ ^-?[0-9]+$ ]]; then
+    echo 0
+    return 0
+  fi
+
+  if [[ "${percent}" -lt 0 ]]; then
+    echo 0
+  elif [[ "${percent}" -gt 100 ]]; then
+    echo 100
+  else
+    echo "${percent}"
+  fi
+}
+
 # Returns a random ANSI color code for context messages
 # Uses modulo to select from predefined color pool (5 colors)
 # Returns: ANSI color escape sequence
@@ -178,6 +186,18 @@ get_context_tier() {
   fi
 }
 
+read_pipe_fields() {
+  local data="$1"
+  shift
+
+  local saved_ifs="${IFS}"
+  IFS='|'
+  read -r "$@" << EOF
+${data}
+EOF
+  IFS="${saved_ifs}"
+}
+
 parse_claude_input() {
   local input="$1"
 
@@ -191,10 +211,12 @@ parse_claude_input() {
     END {
       model_block  = obj_content(doc, "model")
       model_name   = str_val(model_block, "display_name")
+      if (model_name == "") model_name = str_val(model_block, "id")
       if (model_name == "") model_name = "null"
 
-      ws_block    = obj_content(doc, "workspace")
-      current_dir = str_val(ws_block, "current_dir")
+      ws_block     = obj_content(doc, "workspace")
+      current_dir  = str_val(ws_block, "current_dir")
+      if (current_dir == "") current_dir = str_val(ws_block, "project_dir")
       if (current_dir == "") current_dir = "null"
 
       cw_block     = obj_content(doc, "context_window")
@@ -203,9 +225,17 @@ parse_claude_input() {
 
       cu_block       = obj_content(cw_block, "current_usage")
       input_tokens   = num_val(cu_block, "input_tokens")                   + 0
+      output_tokens  = num_val(cu_block, "output_tokens")                  + 0
       cache_creation = num_val(cu_block, "cache_creation_input_tokens")    + 0
       cache_read     = num_val(cu_block, "cache_read_input_tokens")        + 0
-      current_usage  = input_tokens + cache_creation + cache_read
+      current_usage  = input_tokens + output_tokens + cache_creation + cache_read
+
+      context_percent = num_val(cw_block, "used_percentage")
+      if (context_percent == "") {
+        context_percent = "0"
+      } else {
+        context_percent = int(context_percent + 0)
+      }
 
       cost_block = obj_content(doc, "cost")
       cost_usd   = num_val(cost_block, "total_cost_usd")
@@ -215,6 +245,7 @@ parse_claude_input() {
       print current_dir
       print context_size
       print current_usage
+      print context_percent
       print cost_usd
     }
 
@@ -288,14 +319,8 @@ parse_claude_input() {
 }
 
 build_progress_bar() {
-  local percent="$1"
-
-  # Clamp percent to 0-100 range (prevent negative/overflow)
-  if [[ ${percent} -lt 0 ]]; then
-    percent=0
-  elif [[ ${percent} -gt 100 ]]; then
-    percent=100
-  fi
+  local percent
+  percent=$(clamp_percent "$1")
 
   local filled=$((percent * BAR_WIDTH / 100))
   local empty=$((BAR_WIDTH - filled))
@@ -471,10 +496,11 @@ format_git_not_repo() {
   echo " ${ORANGE}(not a git repository)${NC}"
 }
 
-format_git_clean() {
-  local branch="$1" ahead="$2" behind="$3"
+format_git_branch() {
+  local branch="$1"
+  local ahead="$2"
+  local behind="$3"
 
-  # Simple format: branch + ahead/behind (no parentheses)
   local output="${MAGENTA}${branch}${NC}"
   local ahead_behind
   ahead_behind=$(format_ahead_behind "${ahead}" "${behind}")
@@ -483,29 +509,25 @@ format_git_clean() {
   echo " ${output}"
 }
 
+format_git_clean() {
+  format_git_branch "$1" "$2" "$3"
+}
+
 format_git_dirty() {
   local branch="$1" files="$2" ahead="$3" behind="$4"
+  local git_output
 
-  # Simple branch + ahead/behind (no file count, no line changes)
-  local output="${MAGENTA}${branch}${NC}"
-  local ahead_behind
-  ahead_behind=$(format_ahead_behind "${ahead}" "${behind}")
-  [[ -n "${ahead_behind}" ]] && output+="${ahead_behind}"
+  git_output=$(format_git_branch "${branch}" "${ahead}" "${behind}")
 
   # Return git info and file count separately: "git_output|file_count"
-  echo " ${output}|${files}"
+  echo "${git_output}|${files}"
 }
 
 format_git_info() {
   local git_data="$1"
 
-  # Parse state with IFS protection
-  local state saved_ifs
-  saved_ifs="${IFS}"
-  IFS='|' read -r state _ << EOF
-${git_data}
-EOF
-  IFS="${saved_ifs}"
+  local state
+  read_pipe_fields "${git_data}" state _
 
   case "${state}" in
     "${STATE_NOT_REPO}")
@@ -516,11 +538,7 @@ EOF
       ;;
     "${STATE_CLEAN}")
       local branch ahead behind
-      saved_ifs="${IFS}"
-      IFS='|' read -r _ branch ahead behind << EOF
-${git_data}
-EOF
-      IFS="${saved_ifs}"
+      read_pipe_fields "${git_data}" unused branch ahead behind
       # Returns "git_output|file_count" (empty file count for clean)
       local clean_msg
       clean_msg=$(format_git_clean "${branch}" "${ahead}" "${behind}")
@@ -528,11 +546,7 @@ EOF
       ;;
     "${STATE_DIRTY}")
       local branch files ahead behind
-      saved_ifs="${IFS}"
-      IFS='|' read -r _ branch files ahead behind << EOF
-${git_data}
-EOF
-      IFS="${saved_ifs}"
+      read_pipe_fields "${git_data}" unused branch files ahead behind
       # Already returns "git_output|file_count"
       format_git_dirty "${branch}" "${files}" "${ahead}" "${behind}"
       ;;
@@ -555,20 +569,9 @@ build_model_component() {
 build_context_component() {
   local context_size="$1"
   local current_usage="$2"
+  local context_percent="$3"
 
-  # Calculate percentage with division-by-zero protection
-  # Reorder arithmetic: multiply first, then divide (prevents division by zero when context_size < 100)
-  local context_percent=0
-  if [[ "${current_usage}" -gt 0 ]] && [[ "${context_size}" -gt 0 ]]; then
-    context_percent=$(( (current_usage * 100) / context_size ))
-
-    # Clamp to 0-100 range (prevent overflow)
-    if [[ ${context_percent} -gt 100 ]]; then
-      context_percent=100
-    elif [[ ${context_percent} -lt 0 ]]; then
-      context_percent=0
-    fi
-  fi
+  context_percent=$(clamp_percent "${context_percent}")
 
   # Get colored progress bar
   local bar
@@ -598,9 +601,15 @@ build_context_component() {
 
 build_directory_component() {
   local current_dir="$1"
-
   local dir_name
+  local is_valid_dir=1
+
   if [[ -n "${current_dir}" ]] && [[ "${current_dir}" != "${NULL_VALUE}" ]]; then
+    validate_directory "${current_dir}"
+    is_valid_dir=$?
+  fi
+
+  if [[ -n "${current_dir}" ]] && [[ "${current_dir}" != "${NULL_VALUE}" ]] && [[ "${is_valid_dir}" -eq 0 ]]; then
     dir_name=$(get_dirname "${current_dir}")
   else
     dir_name=$(get_dirname "${PWD}")
@@ -616,19 +625,13 @@ build_git_component() {
   git_data=$(get_git_info "${current_dir}")
 
   # format_git_info returns "git_output|file_count" format
-  local formatted git_line file_line saved_ifs
+  local formatted git_line file_line
   formatted=$(format_git_info "${git_data}")
-  saved_ifs="${IFS}"
-  IFS='|' read -r git_line file_line <<< "${formatted}"
-  IFS="${saved_ifs}"
+  read_pipe_fields "${formatted}" git_line file_line
 
   # Extract state to determine emoji placement
   local state
-  saved_ifs="${IFS}"
-  IFS='|' read -r state _ << EOF
-${git_data}
-EOF
-  IFS="${saved_ifs}"
+  read_pipe_fields "${git_data}" state _
 
   # Return git info and file count separately: "git_display|file_count"
   if [[ "${state}" = "${STATE_NOT_REPO}" ]]; then
@@ -642,7 +645,7 @@ build_files_component() {
   local file_count="$1"
 
   # Only show if there are modified files
-  if [[ -n "${file_count}" && "${file_count}" != "0" ]]; then
+  if [[ -n "${file_count}" ]] && [[ "${file_count}" != "${NULL_VALUE}" ]] && [[ "${file_count}" != "0" ]]; then
     echo "${CHANGE_ICON} ${ORANGE}changes${NC}"
   fi
 }
@@ -654,7 +657,7 @@ build_cost_component() {
   [[ "${SHOW_COST}" != "true" ]] && return
 
   # Validate cost is numeric before printf (prevents format string injection)
-  if [[ -n "${cost_usd}" && "${cost_usd}" != "0" && "${cost_usd}" != "${NULL_VALUE}" ]]; then
+  if [[ -n "${cost_usd}" ]] && [[ "${cost_usd}" != "${NULL_VALUE}" ]] && [[ "${cost_usd}" != "0" ]]; then
     # Check if value is a valid number (integer or decimal)
     if [[ "${cost_usd}" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
       # Use LC_NUMERIC=C to ensure decimal point (not comma) for printf on Windows
@@ -739,21 +742,22 @@ main() {
     exit 1
   fi
 
-  # Validate field count (expected: 5 lines)
+  # Validate field count (expected: 6 lines)
   local line_count
-  line_count=$(echo "${parsed}" | wc -l)
-  if [[ ${line_count} -ne 5 ]]; then
-    echo "Error: Expected 5 fields from JSON, got ${line_count}" >&2
+  line_count=$(printf '%s\n' "${parsed}" | wc -l)
+  if [[ ${line_count} -ne 6 ]]; then
+    echo "Error: Expected 6 fields from JSON, got ${line_count}" >&2
     exit 1
   fi
 
   # Extract fields
-  local model_name current_dir context_size current_usage cost_usd
+  local model_name current_dir context_size current_usage context_percent cost_usd
   {
     read -r model_name
     read -r current_dir
     read -r context_size
     read -r current_usage
+    read -r context_percent
     read -r cost_usd
   } << EOF
 ${parsed}
@@ -764,12 +768,13 @@ EOF
   current_dir="${current_dir%$'\r'}"
   context_size="${context_size%$'\r'}"
   current_usage="${current_usage%$'\r'}"
+  context_percent="${context_percent%$'\r'}"
   cost_usd="${cost_usd%$'\r'}"
 
   # Build components (read toggle flags from global constants)
   local model_part context_part dir_part git_part cost_part files_part
   model_part=$(build_model_component "${model_name}")
-  context_part=$(build_context_component "${context_size}" "${current_usage}")
+  context_part=$(build_context_component "${context_size}" "${current_usage}" "${context_percent}")
   dir_part=$(build_directory_component "${current_dir}")
 
   # Git component returns "git_display|file_count"
