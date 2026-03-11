@@ -61,6 +61,7 @@ readonly CONTEXT_MSG_CRITICAL=('living dangerously' 'pushing the limits' 'housto
 # String utilities
 get_dirname() { local p="${1//\\//}"; echo "${p##*/}"; }
 sep() { echo -n " ${SEPARATOR} "; }
+is_present() { [[ -n "$1" ]] && [[ "$1" != "${NULL_VALUE}" ]]; }
 
 # Validate directory path for security
 # Rejects path traversal (..), tilde expansion (~), and shell metacharacters
@@ -136,32 +137,11 @@ clamp_percent() {
 }
 
 # Returns a random ANSI color code for context messages
-# Uses modulo to select from predefined color pool (5 colors)
 # Returns: ANSI color escape sequence
-# Bash 3.2 compatible: uses pipe-delimited string instead of arrays
 get_random_message_color() {
-  local colors="${GREEN}|${CYAN}|${BLUE}|${MAGENTA}|${ORANGE}"
-  local colors_count=5
-
-  # Better distribution than simple modulo (reduces bias)
-  local index=$(( (RANDOM * colors_count) / 32768 ))
-
-  # Extract color using parameter expansion (Bash 3.2 compatible)
-  local i=0
-  local saved_ifs="${IFS}"
-  IFS='|'
-  for color in ${colors}; do
-    if [[ ${i} -eq ${index} ]]; then
-      IFS="${saved_ifs}"
-      echo "${color}"
-      return 0
-    fi
-    ((i++))
-  done
-  IFS="${saved_ifs}"
-
-  # Fallback (should never reach)
-  echo "${CYAN}"
+  local colors=("${GREEN}" "${CYAN}" "${BLUE}" "${MAGENTA}" "${ORANGE}")
+  local index=$(( (RANDOM * ${#colors[@]}) / 32768 ))
+  echo "${colors[${index}]}"
 }
 
 # ============================================================
@@ -386,14 +366,13 @@ get_context_message() {
 # GIT OPERATIONS (Optimized - 7 calls reduced to 2)
 # ============================================================
 
-# Helper function to parse git status output with isolated IFS
+# Helper function to parse git status output
 # Returns: "STATE|branch|total_files|ahead|behind"
 parse_git_status_output() {
   local output="$1"
   local line branch="" ahead="0" behind="0" total_files=0
-  local saved_ifs="${IFS}"
 
-  # Parse with IFS isolated to this function
+  # Parse with IFS isolated to read command
   while IFS= read -r line; do
     case "${line}" in
       "# branch.head "*)
@@ -418,9 +397,6 @@ parse_git_status_output() {
 ${output}
 EOF
 
-  # Restore IFS
-  IFS="${saved_ifs}"
-
   # Default values
   branch="${branch:-(detached HEAD)}"
   ahead="${ahead:-0}"
@@ -439,7 +415,7 @@ get_git_info() {
   local git_opts=()
 
   # Validate and set git directory option
-  if [[ -n "${current_dir}" ]] && [[ "${current_dir}" != "${NULL_VALUE}" ]]; then
+  if is_present "${current_dir}"; then
     # Invoke validation separately to avoid masking return value
     local validation_result=0
     validate_directory "${current_dir}"
@@ -480,12 +456,12 @@ format_ahead_behind() {
   local behind="$2"
   local output=""
 
-  # Validate numeric before arithmetic (maintain existing 2>/dev/null as requested)
-  if [[ "${ahead}" =~ ^[0-9]+$ ]] && [[ "${ahead}" -gt 0 ]] 2>/dev/null; then
+  # Validate numeric before arithmetic
+  if [[ "${ahead}" =~ ^[0-9]+$ ]] && [[ "${ahead}" -gt 0 ]]; then
     output+=" ${GREEN}↑${ahead}${NC}"
   fi
 
-  if [[ "${behind}" =~ ^[0-9]+$ ]] && [[ "${behind}" -gt 0 ]] 2>/dev/null; then
+  if [[ "${behind}" =~ ^[0-9]+$ ]] && [[ "${behind}" -gt 0 ]]; then
     output+=" ${RED}↓${behind}${NC}"
   fi
 
@@ -509,53 +485,6 @@ format_git_branch() {
   echo " ${output}"
 }
 
-format_git_clean() {
-  format_git_branch "$1" "$2" "$3"
-}
-
-format_git_dirty() {
-  local branch="$1" files="$2" ahead="$3" behind="$4"
-  local git_output
-
-  git_output=$(format_git_branch "${branch}" "${ahead}" "${behind}")
-
-  # Return git info and file count separately: "git_output|file_count"
-  echo "${git_output}|${files}"
-}
-
-format_git_info() {
-  local git_data="$1"
-
-  local state
-  read_pipe_fields "${git_data}" state _
-
-  case "${state}" in
-    "${STATE_NOT_REPO}")
-      # Returns "git_output|file_count" (empty file count)
-      local not_repo_msg
-      not_repo_msg=$(format_git_not_repo)
-      echo "${not_repo_msg}|"
-      ;;
-    "${STATE_CLEAN}")
-      local branch ahead behind
-      read_pipe_fields "${git_data}" unused branch ahead behind
-      # Returns "git_output|file_count" (empty file count for clean)
-      local clean_msg
-      clean_msg=$(format_git_clean "${branch}" "${ahead}" "${behind}")
-      echo "${clean_msg}|"
-      ;;
-    "${STATE_DIRTY}")
-      local branch files ahead behind
-      read_pipe_fields "${git_data}" unused branch files ahead behind
-      # Already returns "git_output|file_count"
-      format_git_dirty "${branch}" "${files}" "${ahead}" "${behind}"
-      ;;
-    *)
-      # Unknown state - show error
-      echo " ${ORANGE}(unknown git state)${NC}|"
-      ;;
-  esac
-}
 
 # ============================================================
 # COMPONENT BUILDERS (Open/Closed Principle)
@@ -602,14 +531,8 @@ build_context_component() {
 build_directory_component() {
   local current_dir="$1"
   local dir_name
-  local is_valid_dir=1
 
-  if [[ -n "${current_dir}" ]] && [[ "${current_dir}" != "${NULL_VALUE}" ]]; then
-    validate_directory "${current_dir}"
-    is_valid_dir=$?
-  fi
-
-  if [[ -n "${current_dir}" ]] && [[ "${current_dir}" != "${NULL_VALUE}" ]] && [[ "${is_valid_dir}" -eq 0 ]]; then
+  if is_present "${current_dir}" && validate_directory "${current_dir}"; then
     dir_name=$(get_dirname "${current_dir}")
   else
     dir_name=$(get_dirname "${PWD}")
@@ -624,28 +547,34 @@ build_git_component() {
 
   git_data=$(get_git_info "${current_dir}")
 
-  # format_git_info returns "git_output|file_count" format
-  local formatted git_line file_line
-  formatted=$(format_git_info "${git_data}")
-  read_pipe_fields "${formatted}" git_line file_line
+  local state branch files ahead behind
+  read_pipe_fields "${git_data}" state branch files ahead behind
 
-  # Extract state to determine emoji placement
-  local state
-  read_pipe_fields "${git_data}" state _
-
-  # Return git info and file count separately: "git_display|file_count"
-  if [[ "${state}" = "${STATE_NOT_REPO}" ]]; then
-    echo "${git_line#* }|"
-  else
-    echo "${GIT_ICON} ${git_line#* }|${file_line}"
-  fi
+  case "${state}" in
+    "${STATE_NOT_REPO}")
+      echo " ${ORANGE}(not a git repository)${NC}|"
+      ;;
+    "${STATE_CLEAN}")
+      local git_output
+      git_output=$(format_git_branch "${branch}" "${ahead}" "${behind}")
+      echo "${GIT_ICON}${git_output}|"
+      ;;
+    "${STATE_DIRTY}")
+      local git_output
+      git_output=$(format_git_branch "${branch}" "${ahead}" "${behind}")
+      echo "${GIT_ICON}${git_output}|${files}"
+      ;;
+    *)
+      echo " ${ORANGE}(unknown git state)${NC}|"
+      ;;
+  esac
 }
 
 build_files_component() {
   local file_count="$1"
 
   # Only show if there are modified files
-  if [[ -n "${file_count}" ]] && [[ "${file_count}" != "${NULL_VALUE}" ]] && [[ "${file_count}" != "0" ]]; then
+  if is_present "${file_count}" && [[ "${file_count}" != "0" ]]; then
     echo "${CHANGE_ICON} ${ORANGE}changes${NC}"
   fi
 }
@@ -657,7 +586,7 @@ build_cost_component() {
   [[ "${SHOW_COST}" != "true" ]] && return
 
   # Validate cost is numeric before printf (prevents format string injection)
-  if [[ -n "${cost_usd}" ]] && [[ "${cost_usd}" != "${NULL_VALUE}" ]] && [[ "${cost_usd}" != "0" ]]; then
+  if is_present "${cost_usd}" && [[ "${cost_usd}" != "0" ]]; then
     # Check if value is a valid number (integer or decimal)
     if [[ "${cost_usd}" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
       # Use LC_NUMERIC=C to ensure decimal point (not comma) for printf on Windows
@@ -764,12 +693,9 @@ ${parsed}
 EOF
 
   # Strip carriage returns (Windows line endings compatibility)
-  model_name="${model_name%$'\r'}"
-  current_dir="${current_dir%$'\r'}"
-  context_size="${context_size%$'\r'}"
-  current_usage="${current_usage%$'\r'}"
-  context_percent="${context_percent%$'\r'}"
-  cost_usd="${cost_usd%$'\r'}"
+  for _v in model_name current_dir context_size current_usage context_percent cost_usd; do
+    declare "$_v=${!_v%$'\r'}"
+  done
 
   # Build components (read toggle flags from global constants)
   local model_part context_part dir_part git_part cost_part files_part
@@ -778,11 +704,9 @@ EOF
   dir_part=$(build_directory_component "${current_dir}")
 
   # Git component returns "git_display|file_count"
-  local git_with_files file_count saved_ifs
+  local git_with_files file_count
   git_with_files=$(build_git_component "${current_dir}")
-  saved_ifs="${IFS}"
-  IFS='|' read -r git_part file_count <<< "${git_with_files}"
-  IFS="${saved_ifs}"
+  read_pipe_fields "${git_with_files}" git_part file_count
 
   files_part=$(build_files_component "${file_count}")
   cost_part=$(build_cost_component "${cost_usd}")

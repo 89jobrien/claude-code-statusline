@@ -63,7 +63,7 @@ JSON Input → Parse (awk) → Load i18n → Build Components → Assemble → A
 - **i18n**: Language loading (`load_config()`, `load_language_messages()`)
 - **Utilities**: Directory name extraction (`get_dirname`), separator formatting (`sep`), path validation (`validate_directory`)
 - **Core logic**: JSON parsing (`parse_claude_input`), git operations (`get_git_info`), progress bar rendering (`build_progress_bar`)
-- **Formatters**: Transform raw data to display format (`format_ahead_behind`, `format_git_info`)
+- **Formatters**: Transform raw data to display format (`format_ahead_behind`, `format_git_branch`)
 - **Component builders**: Individual statusline segments (`build_model_component`, `build_context_component`, `build_directory_component`, `build_git_component`, `build_files_component`, `build_cost_component`)
 - **Assembly**: Combine components with separators (`assemble_statusline`)
 - **Orchestration**: Main entry point and dependency checks (`main`)
@@ -72,7 +72,7 @@ JSON Input → Parse (awk) → Load i18n → Build Components → Assemble → A
 
 - **Single Responsibility**: Each function has one purpose (parse, format, build, assemble)
 - **Open/Closed**: Add components without modifying existing code
-- **DRY**: Reusable helpers (`append_if()`, `format_ahead_behind()`, `sep()`)
+- **DRY**: Reusable helpers (`is_present()`, `format_ahead_behind()`, `sep()`)
 - **Functional Composition**: Functions pipe data through transformation stages
 
 ### Critical Performance Optimization
@@ -438,13 +438,13 @@ done
 ### Conditional Display
 
 ```bash
-# Use append_if() helper for optional components
-append_if() {
-  local value="$1"
-  local text="$2"
-  [[ "${value}" != "0" ]] 2>/dev/null && [[ -n "${value}" ]] && [[ "${value}" != "${NULL_VALUE}" ]] && echo -n " ${text}"
+# Check if a value is present (not null and not the NULL_VALUE constant)
+is_present() {
+  [[ -n "$1" ]] && [[ "$1" != "${NULL_VALUE}" ]]
 }
 ```
+
+Used throughout the codebase to validate configuration and optional values before displaying components.
 
 ## Fallback Mechanisms
 
