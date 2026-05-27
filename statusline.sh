@@ -35,12 +35,17 @@ readonly STATE_DIRTY="dirty"
 readonly BAR_FILLED="█"
 readonly BAR_EMPTY="░"
 
+# Wave animation colors (256-color palette rainbow)
+readonly WAVE_COLORS=(196 208 220 226 118 46 48 51 33 21 93 201)
+readonly NUM_WAVE_COLORS=12
+
 # ============================================================
 # RUNTIME CONFIGURATION (Patched by patch-statusline.sh)
 # ============================================================
 # @CONFIG_START
 readonly SHOW_MESSAGES=true
 readonly SHOW_COST=true
+readonly SHOW_RAINBOW_WAVE=false
 # @CONFIG_END
 
 # ============================================================
@@ -326,31 +331,42 @@ build_progress_bar() {
   local filled=$((percent * BAR_WIDTH / 100))
   local empty=$((BAR_WIDTH - filled))
 
-  # Determine bar color based on tier
-  local tier bar_color
-  tier=$(get_context_tier "${percent}")
+  local filled_bar="" i
 
-  case "${tier}" in
-    0) bar_color="${GREEN}" ;;    # Very low
-    1) bar_color="${CYAN}" ;;     # Low
-    2) bar_color="${ORANGE}" ;;   # Medium
-    3) bar_color="${ORANGE}" ;;   # High
-    4) bar_color="${RED}" ;;      # Critical
-    *) bar_color="${GRAY}" ;;     # Fallback
-  esac
+  if [[ "${SHOW_RAINBOW_WAVE}" == "true" ]]; then
+    # Build filled portion with rainbow wave animation
+    local color_idx
+    local time_phase=$(( ${_wave_time:-0} % NUM_WAVE_COLORS ))
+    for ((i=0; i<filled; i++)); do
+      color_idx=$(( (i + time_phase) % NUM_WAVE_COLORS ))
+      filled_bar+="\033[38;5;${WAVE_COLORS[${color_idx}]}m${BAR_FILLED}"
+    done
+  else
+    # Build filled portion with tier-based color
+    local tier bar_color
+    tier=$(get_context_tier "${percent}")
+    case "${tier}" in
+      0) bar_color="${GREEN}" ;;
+      1) bar_color="${CYAN}" ;;
+      2) bar_color="${ORANGE}" ;;
+      3) bar_color="${ORANGE}" ;;
+      4) bar_color="${RED}" ;;
+      *) bar_color="${GRAY}" ;;
+    esac
+    for ((i=0; i<filled; i++)); do
+      filled_bar+="${BAR_FILLED}"
+    done
+    filled_bar="${bar_color}${filled_bar}"
+  fi
 
-  # Build filled and empty portions (pure bash - UTF-8 safe)
-  local filled_bar="" empty_bar=""
-  local i
-  for ((i=0; i<filled; i++)); do
-    filled_bar+="${BAR_FILLED}"
-  done
+  # Build empty portion (stays gray)
+  local empty_bar=""
   for ((i=0; i<empty; i++)); do
     empty_bar+="${BAR_EMPTY}"
   done
 
-  # Output with colors
-  echo -n "${bar_color}${filled_bar}${NC}${GRAY}${empty_bar}${NC}"
+  # Output: colored filled blocks + reset + gray empty blocks + reset
+  echo -n "${filled_bar}${NC}${GRAY}${empty_bar}${NC}"
 }
 
 # Get random context message based on usage percentage
@@ -730,6 +746,15 @@ EOF
   context_percent="${context_percent%$'\r'}"
   cost_usd="${cost_usd%$'\r'}"
   thinking_active="${thinking_active%$'\r'}"
+
+  # Capture epoch time for wave animation (EPOCHSECONDS is free on bash 5+)
+  if [[ "${SHOW_RAINBOW_WAVE}" == "true" ]]; then
+    if [[ -n "${EPOCHSECONDS:-}" ]]; then
+      _wave_time="${EPOCHSECONDS}"
+    else
+      _wave_time=$(date +%s)
+    fi
+  fi
 
   # Build components (read toggle flags from global constants)
   local model_part context_part dir_part git_part cost_part files_part
