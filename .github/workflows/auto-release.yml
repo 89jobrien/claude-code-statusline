@@ -3,6 +3,10 @@ name: Auto Release
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
   workflow_dispatch:
 
 jobs:
@@ -14,18 +18,18 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/create-github-app-token@v1
+      - uses: actions/create-github-app-token@v3
         id: app-token
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         id: cliff-cache
         with:
           path: ~/.cargo/bin/git-cliff
@@ -74,11 +78,18 @@ jobs:
 
       - name: Update CHANGELOG.md
         if: steps.version.outputs.next_version != 'skip'
+        id: changelog
         env:
           NEXT: ${{ steps.version.outputs.next_version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           touch CHANGELOG.md
           git cliff --tag "v$NEXT" --unreleased --prepend CHANGELOG.md
+          # Extract the body for this release (between first ## heading and the next one)
+          BODY=$(awk '/^## /{if(found)exit; found=1; next} found{print}' CHANGELOG.md)
+          echo "body<<CLIFF_EOF" >> "$GITHUB_OUTPUT"
+          echo "$BODY" >> "$GITHUB_OUTPUT"
+          echo "CLIFF_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Bump Cargo.toml version
         if: steps.version.outputs.next_version != 'skip'
