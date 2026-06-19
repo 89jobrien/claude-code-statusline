@@ -146,15 +146,14 @@ pub fn parse(json: &str) -> Result<ClaudeInput> {
 }
 
 /// Returns true if the path is safe to use with a git subprocess.
-/// Rejects: `..` traversal, leading `~`, shell metacharacters (`$`, backtick, `;`).
+/// Rejects: `..` traversal, leading `~`, shell metacharacters (`$`, backtick, `;`), relative paths.
 pub fn validate_directory(path: &str) -> bool {
+    use std::path::{Component, Path};
+
     if path.is_empty() {
         return false;
     }
     if path.contains('\0') {
-        return false;
-    }
-    if path.contains("..") {
         return false;
     }
     if path.starts_with('~') {
@@ -163,7 +162,11 @@ pub fn validate_directory(path: &str) -> bool {
     if path.contains('$') || path.contains('`') || path.contains(';') {
         return false;
     }
-    if !path.starts_with('/') {
+    let p = Path::new(path);
+    if !p.is_absolute() {
+        return false;
+    }
+    if p.components().any(|c| c == Component::ParentDir) {
         return false;
     }
     true
@@ -223,6 +226,8 @@ mod tests {
     fn rejects_path_traversal() {
         assert!(!validate_directory("../etc/passwd"));
         assert!(!validate_directory("/home/user/../secret"));
+        #[cfg(windows)]
+        assert!(!validate_directory(r"C:\Users\foo\..\secret"));
     }
 
     #[test]
@@ -239,8 +244,16 @@ mod tests {
 
     #[test]
     fn accepts_absolute_path() {
-        assert!(validate_directory("/Users/glauberl/Dev/project"));
-        assert!(validate_directory("/tmp/statusline-test"));
+        #[cfg(not(windows))]
+        {
+            assert!(validate_directory("/Users/glauberl/Dev/project"));
+            assert!(validate_directory("/tmp/statusline-test"));
+        }
+        #[cfg(windows)]
+        {
+            assert!(validate_directory(r"C:\Users\foo\project"));
+            assert!(validate_directory("C:/Users/foo/project"));
+        }
     }
 
     #[test]
@@ -251,10 +264,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn falls_back_to_project_dir_when_no_current_dir() {
         let json = r#"{"workspace": {"project_dir": "/tmp/project"}}"#;
         let r = parse(json).unwrap();
         assert_eq!(r.current_dir, "/tmp/project");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn falls_back_to_project_dir_when_no_current_dir() {
+        let json = r#"{"workspace": {"project_dir": "C:\\Users\\foo\\project"}}"#;
+        let r = parse(json).unwrap();
+        assert_eq!(r.current_dir, r"C:\Users\foo\project");
     }
 
     #[test]
