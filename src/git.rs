@@ -5,10 +5,16 @@ pub struct GitInfo {
     pub state: GitState,
     pub branch: String,
     pub changed_files: u32,
+    pub modified: u32,
+    pub added: u32,
+    pub deleted: u32,
+    pub untracked: u32,
     /// Commits ahead of upstream. None when no upstream is set.
     pub ahead: Option<u32>,
     /// Commits behind upstream. None when no upstream is set.
     pub behind: Option<u32>,
+    /// Total worktrees including the main one.
+    pub worktrees: u32,
 }
 
 #[derive(Debug)]
@@ -24,8 +30,13 @@ impl Default for GitInfo {
             state: GitState::NotRepo,
             branch: String::new(),
             changed_files: 0,
+            modified: 0,
+            added: 0,
+            deleted: 0,
+            untracked: 0,
             ahead: None,
             behind: None,
+            worktrees: 1,
         }
     }
 }
@@ -50,9 +61,25 @@ pub fn get_git_info(dir: &str) -> GitInfo {
     match output {
         Ok(o) if o.status.success() => {
             let text = String::from_utf8_lossy(&o.stdout);
-            parse_porcelain_v2(&text)
+            let mut info = parse_porcelain_v2(&text);
+            info.worktrees = get_worktree_count(dir);
+            info
         }
         _ => GitInfo::default(),
+    }
+}
+
+fn get_worktree_count(dir: &str) -> u32 {
+    let output = Command::new("git")
+        .args(["worktree", "list"])
+        .current_dir(dir)
+        .output();
+    match output {
+        Ok(o) if o.status.success() => {
+            let count = String::from_utf8_lossy(&o.stdout).lines().count() as u32;
+            count.max(1)
+        }
+        _ => 1,
     }
 }
 
@@ -62,7 +89,10 @@ pub(crate) fn parse_porcelain_v2(output: &str) -> GitInfo {
     }
 
     let mut branch = String::from("(detached HEAD)");
-    let mut changed_files: u32 = 0;
+    let mut modified: u32 = 0;
+    let mut added: u32 = 0;
+    let mut deleted: u32 = 0;
+    let mut untracked: u32 = 0;
     let mut ahead: Option<u32> = None;
     let mut behind: Option<u32> = None;
 
@@ -79,10 +109,25 @@ pub(crate) fn parse_porcelain_v2(output: &str) -> GitInfo {
                 behind = b.trim_start_matches('-').parse().ok();
             }
         } else if !line.starts_with('#') && !line.is_empty() {
-            changed_files += 1;
+            if line.starts_with('?') {
+                untracked += 1;
+            } else {
+                // porcelain v2: "1 XY ...", "2 XY ...", "u ..."
+                // X = index status (position 2), Y = worktree status (position 3)
+                let x = line.chars().nth(2).unwrap_or('.');
+                let y = line.chars().nth(3).unwrap_or('.');
+                if x == 'A' {
+                    added += 1;
+                } else if x == 'D' || y == 'D' {
+                    deleted += 1;
+                } else {
+                    modified += 1;
+                }
+            }
         }
     }
 
+    let changed_files = modified + added + deleted + untracked;
     let state = if changed_files == 0 {
         GitState::Clean
     } else {
@@ -93,8 +138,13 @@ pub(crate) fn parse_porcelain_v2(output: &str) -> GitInfo {
         state,
         branch,
         changed_files,
+        modified,
+        added,
+        deleted,
+        untracked,
         ahead,
         behind,
+        worktrees: 1,
     }
 }
 
@@ -120,6 +170,8 @@ mod tests {
         assert!(matches!(info.state, GitState::Dirty));
         assert_eq!(info.branch, "feature/x");
         assert_eq!(info.changed_files, 2);
+        assert_eq!(info.modified, 1);
+        assert_eq!(info.untracked, 1);
         assert_eq!(info.ahead, Some(2));
         assert_eq!(info.behind, Some(1));
     }

@@ -10,6 +10,8 @@ pub struct Config {
     pub messages_language: Language,
     #[serde(default)]
     pub usage_bar_style: BarStyle,
+    #[serde(default)]
+    pub pr_status: bool,
 }
 
 impl Default for Config {
@@ -19,6 +21,7 @@ impl Default for Config {
             cost: true,
             messages_language: Language::En,
             usage_bar_style: BarStyle::Plain,
+            pr_status: false,
         }
     }
 }
@@ -106,6 +109,7 @@ pub fn print_defaults() -> String {
         "# messages = false          # show context messages [true|false]",
         "# messages_language = \"en\"  # message language [\"en\"|\"pt\"|\"es\"]",
         "# usage_bar_style = \"plain\" # usage bar style [\"plain\"|\"rainbow\"|\"gradient\"|\"gsd\"]",
+        "# pr_status = false         # show open PR for current branch [true|false] (requires gh CLI)",
     ]
     .join("\n")
         + "\n"
@@ -532,6 +536,7 @@ mod tests {
         let c = Config::default();
         assert!(!c.messages);
         assert!(c.cost);
+        assert!(!c.pr_status);
         assert!(matches!(c.usage_bar_style, BarStyle::Plain));
         assert!(matches!(c.messages_language, Language::En));
     }
@@ -599,6 +604,7 @@ usage_bar_style = "rainbow"
         assert!(out.contains("messages = false"));
         assert!(out.contains("messages_language = \"en\""));
         assert!(out.contains("usage_bar_style = \"plain\""));
+        assert!(out.contains("pr_status = false"));
         assert!(out.contains("[true|false]"));
         assert!(out.contains("[\"plain\"|\"rainbow\"|\"gradient\"|\"gsd\"]"));
     }

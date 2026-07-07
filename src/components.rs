@@ -6,6 +6,7 @@ use crate::render::{
     BAR_EMPTY, BAR_FILLED, BAR_WIDTH, BLUE, CYAN, GRADIENT_COLORS, GRAY, GREEN, MAGENTA, NC,
     ORANGE, ORANGE_256, RED, WAVE_COLORS,
 };
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CRITICAL_PCT: u8 = 96;
@@ -30,10 +31,12 @@ pub fn build_all(input: &ClaudeInput, git: &GitInfo, config: &Config) -> Vec<Str
     vec![
         build_directory(input),
         build_git(git),
-        build_files(git.changed_files),
+        build_files(git),
+        build_worktrees(git.worktrees),
         build_model(input),
         build_context(input, config, wave_time, message_time),
         build_cost(input.cost_usd, config),
+        build_pr(&git.branch, config),
     ]
 }
 
@@ -78,12 +81,138 @@ pub fn build_git(info: &GitInfo) -> String {
     }
 }
 
-pub fn build_files(changed: u32) -> String {
-    if changed == 0 {
+pub fn build_files(git: &GitInfo) -> String {
+    if git.changed_files == 0 {
         return String::new();
     }
-    let noun = if changed == 1 { "file" } else { "files" };
-    format!("{GRAY}chg{NC} {ORANGE}{changed} {noun}{NC}")
+    let mut parts: Vec<String> = Vec::new();
+    if git.modified > 0 {
+        parts.push(format!("{}M", git.modified));
+    }
+    if git.added > 0 {
+        parts.push(format!("{}A", git.added));
+    }
+    if git.deleted > 0 {
+        parts.push(format!("{}D", git.deleted));
+    }
+    if git.untracked > 0 {
+        parts.push(format!("{}?", git.untracked));
+    }
+    let summary = if parts.is_empty() {
+        git.changed_files.to_string()
+    } else {
+        parts.join(" ")
+    };
+    format!("{GRAY}chg{NC} {ORANGE}{summary}{NC}")
+}
+
+pub fn build_worktrees(count: u32) -> String {
+    if count <= 1 {
+        return String::new();
+    }
+    format!("{GRAY}wt{NC} {CYAN}{count}{NC}")
+}
+
+pub fn build_pr(branch: &str, config: &Config) -> String {
+    if !config.pr_status || branch.is_empty() || branch == "(detached HEAD)" {
+        return String::new();
+    }
+
+    let cache_key: String = branch
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let cache_path = format!("/tmp/statusline-pr-{cache_key}.json");
+
+    if let Some((number, review)) = read_pr_cache(&cache_path) {
+        return format_pr_display(number, &review);
+    }
+
+    let output = Command::new("gh")
+        .args([
+            "pr",
+            "list",
+            "--head",
+            branch,
+            "--state",
+            "open",
+            "--json",
+            "number,reviewDecision",
+            "--limit",
+            "1",
+        ])
+        .output();
+
+    let Ok(out) = output else {
+        return String::new();
+    };
+    if !out.status.success() {
+        return String::new();
+    }
+
+    let text = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(_) => return String::new(),
+    };
+
+    let arr = match json.as_array() {
+        Some(a) if !a.is_empty() => a,
+        _ => {
+            write_pr_cache(&cache_path, 0, "");
+            return String::new();
+        }
+    };
+
+    let number = arr[0]["number"].as_u64().unwrap_or(0) as u32;
+    let review = arr[0]["reviewDecision"].as_str().unwrap_or("").to_string();
+
+    write_pr_cache(&cache_path, number, &review);
+    format_pr_display(number, &review)
+}
+
+fn format_pr_display(number: u32, review: &str) -> String {
+    if number == 0 {
+        return String::new();
+    }
+    let suffix = match review {
+        "APPROVED" => format!(" {GREEN}ok{NC}"),
+        "CHANGES_REQUESTED" => format!(" {RED}changes{NC}"),
+        "REVIEW_REQUIRED" => format!(" {ORANGE}review{NC}"),
+        _ => String::new(),
+    };
+    format!("{GRAY}PR{NC} {CYAN}#{number}{NC}{suffix}")
+}
+
+fn read_pr_cache(path: &str) -> Option<(u32, String)> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let ts = json["ts"].as_u64()?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if now.saturating_sub(ts) > 30 {
+        return None;
+    }
+    let number = json["number"].as_u64()? as u32;
+    let review = json["review"].as_str().unwrap_or("").to_string();
+    Some((number, review))
+}
+
+fn write_pr_cache(path: &str, number: u32, review: &str) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let json = serde_json::json!({"ts": now, "number": number, "review": review});
+    let _ = std::fs::write(path, json.to_string());
 }
 
 pub fn build_context(
@@ -374,35 +503,66 @@ mod tests {
         assert!(out.contains('$'));
     }
 
+    fn make_git_info(modified: u32, added: u32, deleted: u32, untracked: u32) -> GitInfo {
+        use crate::git::GitState;
+        let changed_files = modified + added + deleted + untracked;
+        GitInfo {
+            state: if changed_files == 0 {
+                GitState::Clean
+            } else {
+                GitState::Dirty
+            },
+            branch: "main".to_string(),
+            changed_files,
+            modified,
+            added,
+            deleted,
+            untracked,
+            ahead: None,
+            behind: None,
+            worktrees: 1,
+        }
+    }
+
     #[test]
     fn files_empty_when_no_changes() {
-        let out = build_files(0);
+        let git = make_git_info(0, 0, 0, 0);
+        let out = build_files(&git);
         assert!(out.is_empty());
     }
 
     #[test]
-    fn files_shows_changes_icon() {
-        let out = build_files(3);
-        assert!(out.contains("3"));
-        assert!(out.contains("files"));
-        assert!(out.contains("chg"));
+    fn files_shows_breakdown() {
+        let git = make_git_info(2, 1, 0, 0);
+        let out = build_files(&git);
+        assert!(out.contains("2M"), "should show modified: {out}");
+        assert!(out.contains("1A"), "should show added: {out}");
+        assert!(out.contains("chg"), "should show chg prefix: {out}");
     }
 
     #[test]
-    fn files_singular_when_one_change() {
-        let out = build_files(1);
-        assert!(out.contains("1 file"), "should use singular: {out}");
-        assert!(!out.contains("1 files"), "must not use plural for 1: {out}");
+    fn files_shows_all_categories() {
+        let git = make_git_info(1, 1, 1, 1);
+        let out = build_files(&git);
+        assert!(out.contains("1M"), "missing M: {out}");
+        assert!(out.contains("1A"), "missing A: {out}");
+        assert!(out.contains("1D"), "missing D: {out}");
+        assert!(out.contains("1?"), "missing ?: {out}");
+    }
+
+    #[test]
+    fn files_untracked_only() {
+        let git = make_git_info(0, 0, 0, 3);
+        let out = build_files(&git);
+        assert!(out.contains("3?"), "should show untracked: {out}");
+        assert!(!out.contains('M'), "must not show M: {out}");
     }
 
     #[test]
     fn git_not_repo_shows_message() {
         let info = GitInfo {
             state: GitState::NotRepo,
-            branch: String::new(),
-            changed_files: 0,
-            ahead: None,
-            behind: None,
+            ..GitInfo::default()
         };
         let out = build_git(&info);
         assert!(out.contains("not a git repository"));
@@ -413,9 +573,7 @@ mod tests {
         let info = GitInfo {
             state: GitState::Clean,
             branch: "main".to_string(),
-            changed_files: 0,
-            ahead: None,
-            behind: None,
+            ..GitInfo::default()
         };
         let out = build_git(&info);
         assert!(out.contains("main"));
@@ -425,10 +583,7 @@ mod tests {
     fn git_not_repo_has_no_leading_space() {
         let info = GitInfo {
             state: GitState::NotRepo,
-            branch: String::new(),
-            changed_files: 0,
-            ahead: None,
-            behind: None,
+            ..GitInfo::default()
         };
         let out = build_git(&info);
         assert!(
@@ -442,9 +597,9 @@ mod tests {
         let info = GitInfo {
             state: GitState::Clean,
             branch: "main".to_string(),
-            changed_files: 0,
             ahead: Some(3),
             behind: Some(0),
+            ..GitInfo::default()
         };
         let out = build_git(&info);
         assert!(out.contains("+3"), "should show ahead count: {out}");
@@ -456,9 +611,9 @@ mod tests {
         let info = GitInfo {
             state: GitState::Clean,
             branch: "main".to_string(),
-            changed_files: 0,
             ahead: Some(0),
             behind: Some(2),
+            ..GitInfo::default()
         };
         let out = build_git(&info);
         assert!(out.contains("-2"), "should show behind count: {out}");
@@ -470,9 +625,9 @@ mod tests {
         let info = GitInfo {
             state: GitState::Clean,
             branch: "main".to_string(),
-            changed_files: 0,
             ahead: Some(2),
             behind: Some(1),
+            ..GitInfo::default()
         };
         let out = build_git(&info);
         assert!(out.contains("+2"), "should show ahead: {out}");
@@ -484,9 +639,7 @@ mod tests {
         let info = GitInfo {
             state: GitState::Clean,
             branch: "main".to_string(),
-            changed_files: 0,
-            ahead: None,
-            behind: None,
+            ..GitInfo::default()
         };
         let out = build_git(&info);
         assert!(!out.contains('+'), "no upstream should not show +: {out}");

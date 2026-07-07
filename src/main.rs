@@ -1,11 +1,11 @@
 mod components;
 mod config;
 mod configure;
+#[cfg(debug_assertions)]
+mod debug_log;
 mod git;
 mod input;
 mod render;
-#[cfg(debug_assertions)]
-mod debug_log;
 
 use anyhow::Context;
 

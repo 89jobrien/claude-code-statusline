@@ -5,7 +5,7 @@
 .DESCRIPTION
     Downloads the latest statusline binary and configures Claude Code.
 .EXAMPLE
-    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/glauberlima/claude-code-statusline/main/install.ps1)))
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/89jobrien/claude-code-statusline/main/install.ps1)))
 .EXAMPLE
     .\install.ps1 -InstallDir C:\custom\path
 #>
@@ -17,7 +17,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$GithubRepo    = "glauberlima/claude-code-statusline"
+$GithubRepo    = "89jobrien/claude-code-statusline"
 $GithubApi     = "https://api.github.com/repos/$GithubRepo/releases/latest"
 $GithubDlBase  = "https://github.com/$GithubRepo/releases/download"
 $MaxRetries    = 3
