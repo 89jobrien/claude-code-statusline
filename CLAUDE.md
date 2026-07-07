@@ -8,10 +8,12 @@ Rust binary statusline for Claude Code CLI displaying (in order):
 
 - Directory
 - Git branch (when in a Git repository)
-- File changes (when present)
+- File changes broken down by type: `M` modified, `A` added, `D` deleted, `?` untracked (when present)
+- Worktree count (when more than one worktree exists)
 - Model name
 - Context usage visualization with progress bar
 - Cost tracking (when present and enabled)
+- Open PR number and review status for current branch (opt-in, requires `gh` CLI)
 
 **Primary file**: `src/main.rs`
 **Language**: Rust 1.96, edition 2024 (pinned via `rust-toolchain.toml`; requires `rustup`)
@@ -65,20 +67,22 @@ JSON stdin → input.rs (parse) → config.rs (load TOML) → git.rs (git status
 
 ### Module Map
 
-| Module                 | Responsibility                                                                                                                                   |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/main.rs`          | Entry point: `--print-defaults`, `--version`, `--configure-settings` flags or parse→build→render pipeline                                        |
-| `src/configure.rs`     | `--configure-settings <settings_path> <command_path>` — reads/merges/writes `~/.claude/settings.json` atomically                                 |
-| `src/input.rs`         | JSON parsing via `serde_json`; `validate_directory()` for security                                                                               |
-| `src/config.rs`        | TOML config loading; `BarStyle`/`Language` enums with fallback warnings; `print_defaults()`                                                      |
-| `src/git.rs`           | Single `git status --porcelain=v2 --branch --untracked-files=all` call; `parse_porcelain_v2()`                                                   |
-| `src/components.rs`    | All component builders (`build_model`, `build_directory`, `build_git`, `build_files`, `build_context`, `build_cost`); `build_all()` orchestrator |
-| `src/render.rs`        | ANSI color constants, `BAR_FILLED`/`BAR_EMPTY`/`BAR_WIDTH`, `assemble()`                                                                         |
-| `tests/integration.rs` | End-to-end tests spawning the compiled binary with fixture JSON                                                                                  |
+| Module                 | Responsibility                                                                                                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main.rs`          | Entry point: `--print-defaults`, `--version`, `--configure-settings` flags or parse→build→render pipeline                                                                       |
+| `src/configure.rs`     | `--configure-settings <settings_path> <command_path>` — reads/merges/writes `~/.claude/settings.json` atomically                                                                |
+| `src/input.rs`         | JSON parsing via `serde_json`; `validate_directory()` for security                                                                                                              |
+| `src/config.rs`        | TOML config loading; `BarStyle`/`Language` enums with fallback warnings; `print_defaults()`                                                                                     |
+| `src/git.rs`           | Single `git status --porcelain=v2 --branch --untracked-files=all` call; `parse_porcelain_v2()`                                                                                  |
+| `src/components.rs`    | All component builders (`build_model`, `build_directory`, `build_git`, `build_files`, `build_worktrees`, `build_context`, `build_cost`, `build_pr`); `build_all()` orchestrator |
+| `src/render.rs`        | ANSI color constants, `BAR_FILLED`/`BAR_EMPTY`/`BAR_WIDTH`, `assemble()`                                                                                                        |
+| `tests/integration.rs` | End-to-end tests spawning the compiled binary with fixture JSON                                                                                                                 |
 
 ### Key Design Decisions
 
-- **Single git call**: `git status --porcelain=v2 --branch --untracked-files=all` provides branch and file status in one subprocess. Requires git 2.11+ (Dec 2016).
+- **Single git call**: `git status --porcelain=v2 --branch --untracked-files=all` provides branch and per-type file status (M/A/D/?) in one subprocess. Requires git 2.11+ (Dec 2016).
+- **Worktree count**: A second `git worktree list` call runs after the status call. Hidden when count is 1 (no extra worktrees).
+- **PR status**: `build_pr()` shells out to `gh pr list` with a 30-second `/tmp` cache to avoid repeated API calls. Disabled by default; enable with `pr_status = true`.
 - **Config via binary-adjacent TOML**: `config.rs` loads `statusline.toml` from the directory containing the running binary (`~/.claude/statusline.toml`). Falls back to defaults silently on missing file; logs warning on parse error.
 - **`--print-defaults`**: Prints commented TOML defaults to stdout. Used by installers to seed `statusline.toml`.
 - **`--configure-settings <settings_path> <command_path>`**: Reads `settings.json`, backs it up, merges the `statusLine` key, and writes atomically. Used by installers instead of external JSON tooling.
@@ -93,6 +97,7 @@ JSON stdin → input.rs (parse) → config.rs (load TOML) → git.rs (git status
 # messages = false          # show context messages [true|false]
 # messages_language = "en"  # message language ["en"|"pt"|"es"]
 # usage_bar_style = "plain" # usage bar style ["plain"|"rainbow"|"gradient"|"gsd"]
+# pr_status = false         # show open PR for current branch [true|false] (requires gh CLI)
 ```
 
 All fields are optional. Shown values are defaults.
@@ -115,8 +120,8 @@ All fields are optional. Shown values are defaults.
 
 Each module has inline tests. Run with `cargo test --bins`.
 
-- `src/components.rs`: tests for each builder function (model, directory, git, files, context, cost, progress bar, number formatting)
-- `src/git.rs`: `parse_porcelain_v2()` tests (clean, dirty, detached HEAD, no upstream, empty)
+- `src/components.rs`: tests for each builder function (model, directory, git, files breakdown, worktrees, context, cost, PR display, progress bar, number formatting)
+- `src/git.rs`: `parse_porcelain_v2()` tests (clean, dirty with M/A/D/? breakdown, detached HEAD, no upstream, empty)
 - `src/input.rs`: JSON parsing tests, `validate_directory()` security tests
 - `src/render.rs`: `assemble()` tests (separator joining, empty part filtering)
 - `src/config.rs`: `print_defaults()` completeness test
@@ -156,10 +161,12 @@ pub fn build_all(input: &ClaudeInput, git: &GitInfo, config: &Config) -> Vec<Str
     vec![
         build_directory(input),
         build_git(git),
-        build_files(git.changed_files),
+        build_files(git),
+        build_worktrees(git.worktrees),
         build_model(input),
         build_context(input, config, wave_time),
         build_cost(input.cost_usd, config),
+        build_pr(&git.branch, config),
         build_new_component(input),  // add here
     ]
 }
@@ -170,7 +177,8 @@ pub fn build_all(input: &ClaudeInput, git: &GitInfo, config: &Config) -> Vec<Str
 ## Performance
 
 - Binary startup: ~5ms
-- Git operations: single subprocess call, ~10-50ms depending on repo size
+- Git operations: two subprocess calls (`git status`, `git worktree list`), ~10-50ms depending on repo size
+- PR status: one `gh pr list` call per branch, cached in `/tmp` for 30 seconds
 - Config loading: reads one file on startup, ~1ms
 
 ## Dependencies
