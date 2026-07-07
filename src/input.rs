@@ -90,10 +90,15 @@ pub fn parse(json: &str) -> Result<ClaudeInput> {
     //   used = round(100 - usable_remaining)
     // Credit: normalization approach from gsd-statusline (https://github.com/open-gsd/gsd-core)
     const AUTO_COMPACT_BUFFER_PCT: f64 = 16.5;
+    const PCT_FULL: f64 = 100.0;
+    const PCT_USABLE: f64 = PCT_FULL - AUTO_COMPACT_BUFFER_PCT;
+    const PCT_ZERO: f64 = 0.0;
     let context_percent = cw.and_then(|c| c.remaining_percentage).map(|r| {
         let usable_remaining =
-            ((r - AUTO_COMPACT_BUFFER_PCT) / (100.0 - AUTO_COMPACT_BUFFER_PCT) * 100.0).max(0.0);
-        (100.0 - usable_remaining).round().clamp(0.0, 100.0) as u8
+            ((r - AUTO_COMPACT_BUFFER_PCT) / PCT_USABLE * PCT_FULL).max(PCT_ZERO);
+        (PCT_FULL - usable_remaining)
+            .round()
+            .clamp(PCT_ZERO, PCT_FULL) as u8
     });
 
     let cost_usd = raw

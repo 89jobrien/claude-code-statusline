@@ -16,3 +16,15 @@ Thumbs.db
 
 # Local docs (plans, specs)
 docs/
+
+# handoff-begin
+.ctx/*
+!.ctx/rustqual-baseline.json
+!.ctx/HANDOFF.*.yaml
+.ctx/HANDOFF.godmode.*.yaml
+.ctx/HANDOFF.*.state.json
+!.ctx/handoff.*.config.toml.example
+.ctx/HANDOFF.*.*.state.json
+.ctx/HANDOFF.hj.hj.state.json
+.ctx/.initialized
+# handoff-end

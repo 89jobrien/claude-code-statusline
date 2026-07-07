@@ -27,7 +27,6 @@ fn default_true() -> bool {
     true
 }
 
-
 #[derive(Debug, Clone, Copy, Default)]
 pub enum BarStyle {
     #[default]
@@ -52,7 +51,6 @@ impl<'de> Deserialize<'de> for BarStyle {
         }
     }
 }
-
 
 #[derive(Debug, Clone, Copy, Default)]
 pub enum Language {
@@ -608,15 +606,24 @@ usage_bar_style = "rainbow"
     #[test]
     fn tier_from_percent() {
         assert!(matches!(ContextTier::from_percent(0), ContextTier::VeryLow));
-        assert!(matches!(ContextTier::from_percent(30), ContextTier::VeryLow));
+        assert!(matches!(
+            ContextTier::from_percent(30),
+            ContextTier::VeryLow
+        ));
         assert!(matches!(ContextTier::from_percent(31), ContextTier::Low));
         assert!(matches!(ContextTier::from_percent(50), ContextTier::Low));
         assert!(matches!(ContextTier::from_percent(51), ContextTier::Medium));
         assert!(matches!(ContextTier::from_percent(70), ContextTier::Medium));
         assert!(matches!(ContextTier::from_percent(71), ContextTier::High));
         assert!(matches!(ContextTier::from_percent(85), ContextTier::High));
-        assert!(matches!(ContextTier::from_percent(86), ContextTier::Critical));
-        assert!(matches!(ContextTier::from_percent(100), ContextTier::Critical));
+        assert!(matches!(
+            ContextTier::from_percent(86),
+            ContextTier::Critical
+        ));
+        assert!(matches!(
+            ContextTier::from_percent(100),
+            ContextTier::Critical
+        ));
     }
 
     #[test]
@@ -628,6 +635,9 @@ usage_bar_style = "rainbow"
     #[test]
     fn print_defaults_contains_gsd() {
         let out = print_defaults();
-        assert!(out.contains("\"gsd\""), "print_defaults must list gsd option");
+        assert!(
+            out.contains("\"gsd\""),
+            "print_defaults must list gsd option"
+        );
     }
 }

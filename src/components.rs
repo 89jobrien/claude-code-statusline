@@ -1,3 +1,4 @@
+// qual:allow(srp) reason: "all functions are tightly related component builders; splitting adds indirection"
 use crate::config::{BarStyle, Config, ContextTier, get_messages};
 use crate::git::{GitInfo, GitState};
 use crate::input::ClaudeInput;
@@ -6,6 +7,13 @@ use crate::render::{
     ORANGE, ORANGE_256, RED, WAVE_COLORS,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
+
+const CRITICAL_PCT: u8 = 96;
+const WARNING_PCT: u8 = 86;
+const PCT_MAX: usize = 100;
+const K: u32 = 1_000;
+const M: u32 = 1_000_000;
+const LARGE_DIVISOR: u32 = 10;
 
 pub fn build_all(input: &ClaudeInput, git: &GitInfo, config: &Config) -> Vec<String> {
     let now_secs = SystemTime::now()
@@ -95,9 +103,9 @@ pub fn build_context(
     let usage = format_number(current_usage);
     let size = format_number(context_size);
 
-    let prefix = if pct >= 96 {
+    let prefix = if pct >= CRITICAL_PCT {
         format!("{RED}\x1b[5m!!\x1b[25m{NC}")
-    } else if pct >= 86 {
+    } else if pct >= WARNING_PCT {
         format!("{RED}\x1b[5m!\x1b[25m{NC}")
     } else {
         format!("{GRAY}ctx{NC}")
@@ -191,9 +199,10 @@ fn fill_gsd(filled: usize, percent: u8, _wave_time: u64) -> String {
     fill_solid(filled, color)
 }
 
+// qual:allow(dry) reason: "dispatch over style variants; splitting adds indirection without clarity"
 pub fn build_usage_bar(percent: u8, style: BarStyle, wave_time: u64) -> String {
-    let pct = percent.clamp(0, 100) as usize;
-    let filled = pct * BAR_WIDTH / 100;
+    let pct = percent.clamp(0, PCT_MAX as u8) as usize;
+    let filled = pct * BAR_WIDTH / PCT_MAX;
     let empty = BAR_WIDTH - filled;
 
     let colored = match style {
@@ -215,22 +224,22 @@ pub fn build_usage_bar(percent: u8, style: BarStyle, wave_time: u64) -> String {
 }
 
 pub fn format_number(n: u32) -> String {
-    if n < 1_000 {
+    if n < K {
         return n.to_string();
     }
-    if n < 1_000_000 {
-        let k = n / 1_000;
-        let r = n % 1_000;
-        return if k < 10 {
-            format!("{k}.{}K", r / 100)
+    if n < M {
+        let k = n / K;
+        let r = n % K;
+        return if k < LARGE_DIVISOR {
+            format!("{k}.{}K", r / (K / LARGE_DIVISOR))
         } else {
             format!("{k}K")
         };
     }
-    let m = n / 1_000_000;
-    let r = n % 1_000_000;
-    if m < 10 {
-        format!("{m}.{}M", r / 100_000)
+    let m = n / M;
+    let r = n % M;
+    if m < LARGE_DIVISOR {
+        format!("{m}.{}M", r / (M / LARGE_DIVISOR))
     } else {
         format!("{m}M")
     }
