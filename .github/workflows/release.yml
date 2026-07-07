@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       type:
-        description: 'Release type'
+        description: "Release type"
         required: true
         type: choice
         options: [stable, unstable]
@@ -20,16 +20,10 @@ jobs:
       skipped: ${{ steps.version.outputs.skipped }}
 
     steps:
-      - uses: actions/create-github-app-token@v3
-        id: app-token
-        with:
-          client-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/cache@v5
         if: inputs.type == 'stable'
@@ -159,7 +153,7 @@ jobs:
       - name: Install Rust 1.96.0
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.96.0'
+          toolchain: "1.96.0"
           targets: x86_64-apple-darwin,aarch64-apple-darwin
       - name: Patch Cargo.toml version (unstable)
         if: inputs.type == 'unstable'
@@ -197,7 +191,7 @@ jobs:
       - name: Install Rust 1.96.0
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.96.0'
+          toolchain: "1.96.0"
       - name: Patch Cargo.toml version (unstable)
         if: inputs.type == 'unstable'
         env:
@@ -228,7 +222,7 @@ jobs:
       - name: Install Rust 1.96.0
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.96.0'
+          toolchain: "1.96.0"
       - name: Patch Cargo.toml version (unstable)
         if: inputs.type == 'unstable'
         env:
@@ -313,8 +307,8 @@ jobs:
           TAG: ${{ needs.cut.outputs.tag }}
         run: |
           CHANGELOG_BODY=$(awk '/^## /{if(found)exit; found=1; next} found{print}' CHANGELOG.md)
-          CURL_CMD="curl -fsSL https://raw.githubusercontent.com/glauberlima/claude-code-statusline/main/install.sh | bash -s -- --version ${TAG}"
-          PS_CMD="& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/glauberlima/claude-code-statusline/main/install.ps1'))) -Version ${TAG}"
+          CURL_CMD="curl -fsSL https://raw.githubusercontent.com/89jobrien/claude-code-statusline/main/install.sh | bash -s -- --version ${TAG}"
+          PS_CMD="& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/89jobrien/claude-code-statusline/main/install.ps1'))) -Version ${TAG}"
           INSTALL_BLOCK=$(printf '## Install this version\n\n**macOS / Linux / WSL**\n```bash\n%s\n```\n\n**Windows — PowerShell**\n```powershell\n%s\n```\n\n---' "$CURL_CMD" "$PS_CMD")
           VT_SECTION="${{ steps.vt-section.outputs.section }}"
           BODY="${VT_SECTION}"$'\n\n'"${INSTALL_BLOCK}"$'\n\n'"${CHANGELOG_BODY}"
@@ -343,8 +337,8 @@ jobs:
           LAST_STABLE=$(git describe --tags --abbrev=0 --exclude "*-dev.*" 2>/dev/null || echo "")
           RANGE="${LAST_STABLE:+${LAST_STABLE}..}HEAD"
           CLIFF_BODY=$(NO_COLOR=1 git cliff --tag "$TAG" "$RANGE" --ignore-tags ".*-dev\..*" --strip all 2>/dev/null || true)
-          CURL_CMD="curl -fsSL https://raw.githubusercontent.com/glauberlima/claude-code-statusline/main/install.sh | bash -s -- --version ${TAG}"
-          PS_CMD="& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/glauberlima/claude-code-statusline/main/install.ps1'))) -Version ${TAG}"
+          CURL_CMD="curl -fsSL https://raw.githubusercontent.com/89jobrien/claude-code-statusline/main/install.sh | bash -s -- --version ${TAG}"
+          PS_CMD="& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/89jobrien/claude-code-statusline/main/install.ps1'))) -Version ${TAG}"
           INSTALL_BLOCK=$(printf '## Install this version\n\n**macOS / Linux / WSL**\n```bash\n%s\n```\n\n**Windows — PowerShell**\n```powershell\n%s\n```\n\n---' "$CURL_CMD" "$PS_CMD")
           VT_SECTION="${{ steps.vt-section.outputs.section }}"
           BODY="${VT_SECTION}"$'\n\n'"${INSTALL_BLOCK}"$'\n\n'"${CLIFF_BODY}"
@@ -370,13 +364,11 @@ jobs:
           SECURITY_SECTION="## 🛡️ Security\n\nAll release binaries are automatically scanned by [VirusTotal](https://virustotal.com) before publishing.\nEach release page includes the scan results and direct links to the VirusTotal reports for every binary."
 
           if grep -q "^## 🛡️ Security$" README.md; then
-            # Replace existing section up to the next ## heading
             awk '
               /^## 🛡️ Security$/ { skip=1; next }
               skip && /^## / { skip=0 }
               !skip { print }
             ' README.md > README.md.tmp
-            # Find insertion point: before "## 📥 Direct Downloads"
             awk -v section="$SECURITY_SECTION" '
               /^## 📥 Direct Downloads/ {
                 printf "%b\n\n", section
@@ -385,7 +377,6 @@ jobs:
             ' README.md.tmp > README.md
             rm README.md.tmp
           else
-            # Insert before "## 📥 Direct Downloads"
             awk -v section="$SECURITY_SECTION" '
               /^## 📥 Direct Downloads/ {
                 printf "%b\n\n", section
