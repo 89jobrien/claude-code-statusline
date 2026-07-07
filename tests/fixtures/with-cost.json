@@ -1,0 +1,15 @@
+{
+  "model": { "display_name": "Test Model" },
+  "workspace": { "current_dir": "/tmp/statusline-test" },
+  "context_window": {
+    "context_window_size": 200000,
+    "remaining_percentage": 50,
+    "current_usage": {
+      "input_tokens": 100000,
+      "output_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0
+    }
+  },
+  "cost": { "total_cost_usd": 1.23 }
+}
