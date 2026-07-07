@@ -56,7 +56,7 @@ impl<'de> Deserialize<'de> for BarStyle {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub enum Language {
+pub(crate) enum Language {
     #[default]
     En,
     Pt,

@@ -40,11 +40,11 @@ pub fn build_all(input: &ClaudeInput, git: &GitInfo, config: &Config) -> Vec<Str
     ]
 }
 
-pub fn build_model(input: &ClaudeInput) -> String {
+pub(crate) fn build_model(input: &ClaudeInput) -> String {
     format!("{GRAY}mdl{NC} {CYAN}{}{NC}", input.model_name)
 }
 
-pub fn build_directory(input: &ClaudeInput) -> String {
+pub(crate) fn build_directory(input: &ClaudeInput) -> String {
     let name = if input.current_dir.is_empty() {
         std::env::current_dir()
             .ok()
@@ -59,7 +59,7 @@ pub fn build_directory(input: &ClaudeInput) -> String {
     format!("{GRAY}dir{NC} {BLUE}{name}{NC}")
 }
 
-pub fn build_git(info: &GitInfo) -> String {
+pub(crate) fn build_git(info: &GitInfo) -> String {
     match info.state {
         GitState::NotRepo => format!("{ORANGE}(not a git repository){NC}"),
         GitState::Clean | GitState::Dirty => {
@@ -81,7 +81,7 @@ pub fn build_git(info: &GitInfo) -> String {
     }
 }
 
-pub fn build_files(git: &GitInfo) -> String {
+pub(crate) fn build_files(git: &GitInfo) -> String {
     if git.changed_files == 0 {
         return String::new();
     }
@@ -106,14 +106,14 @@ pub fn build_files(git: &GitInfo) -> String {
     format!("{GRAY}chg{NC} {ORANGE}{summary}{NC}")
 }
 
-pub fn build_worktrees(count: u32) -> String {
+pub(crate) fn build_worktrees(count: u32) -> String {
     if count <= 1 {
         return String::new();
     }
     format!("{GRAY}wt{NC} {CYAN}{count}{NC}")
 }
 
-pub fn build_pr(branch: &str, config: &Config) -> String {
+pub(crate) fn build_pr(branch: &str, config: &Config) -> String {
     if !config.pr_status || branch.is_empty() || branch == "(detached HEAD)" {
         return String::new();
     }
@@ -215,7 +215,7 @@ fn write_pr_cache(path: &str, number: u32, review: &str) {
     let _ = std::fs::write(path, json.to_string());
 }
 
-pub fn build_context(
+pub(crate) fn build_context(
     input: &ClaudeInput,
     config: &Config,
     wave_time: u64,
@@ -258,7 +258,7 @@ pub fn build_context(
     format!("{prefix} {GRAY}[{NC}{bar_and_pct} {usage}/{size}{message_part}")
 }
 
-pub fn build_cost(cost_usd: f64, config: &Config) -> String {
+pub(crate) fn build_cost(cost_usd: f64, config: &Config) -> String {
     if !config.cost || cost_usd == 0.0 {
         return String::new();
     }
@@ -329,7 +329,7 @@ fn fill_gsd(filled: usize, percent: u8, _wave_time: u64) -> String {
 }
 
 // qual:allow(dry) reason: "dispatch over style variants; splitting adds indirection without clarity"
-pub fn build_usage_bar(percent: u8, style: BarStyle, wave_time: u64) -> String {
+pub(crate) fn build_usage_bar(percent: u8, style: BarStyle, wave_time: u64) -> String {
     let pct = percent.clamp(0, PCT_MAX as u8) as usize;
     let filled = pct * BAR_WIDTH / PCT_MAX;
     let empty = BAR_WIDTH - filled;
@@ -352,7 +352,7 @@ pub fn build_usage_bar(percent: u8, style: BarStyle, wave_time: u64) -> String {
     bar
 }
 
-pub fn format_number(n: u32) -> String {
+pub(crate) fn format_number(n: u32) -> String {
     if n < K {
         return n.to_string();
     }
