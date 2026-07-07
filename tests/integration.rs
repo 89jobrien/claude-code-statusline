@@ -54,13 +54,12 @@ fn output_ends_with_newline() {
 fn contains_directory_icon() {
     let json = include_str!("fixtures/test-input.json");
     let out = run_statusline(json);
-    assert!(out.contains("📁"), "missing dir icon in: {out}");
+    assert!(out.contains("dir"), "missing dir prefix in: {out}");
 }
 
 #[test]
 fn configure_settings_creates_and_merges() {
-    let dir = std::env::temp_dir()
-        .join(format!("statusline-cfg-itest-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("statusline-cfg-itest-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let settings = dir.join("settings.json");
     std::fs::write(&settings, r#"{"other":"value"}"#).unwrap();
@@ -75,7 +74,12 @@ fn configure_settings_creates_and_merges() {
         .output()
         .expect("failed to run statusline");
 
-    assert_eq!(out.status.code(), Some(0), "non-zero exit: {:?}", out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "non-zero exit: {:?}",
+        out.stderr
+    );
 
     let content = std::fs::read_to_string(&settings).unwrap();
     let v: serde_json::Value = serde_json::from_str(&content).unwrap();

@@ -30,7 +30,7 @@ pub fn build_all(input: &ClaudeInput, git: &GitInfo, config: &Config) -> Vec<Str
 }
 
 pub fn build_model(input: &ClaudeInput) -> String {
-    format!("🤖 {CYAN}{}{NC}", input.model_name)
+    format!("{GRAY}mdl{NC} {CYAN}{}{NC}", input.model_name)
 }
 
 pub fn build_directory(input: &ClaudeInput) -> String {
@@ -45,14 +45,14 @@ pub fn build_directory(input: &ClaudeInput) -> String {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| input.current_dir.clone())
     };
-    format!("📁 {BLUE}{name}{NC}")
+    format!("{GRAY}dir{NC} {BLUE}{name}{NC}")
 }
 
 pub fn build_git(info: &GitInfo) -> String {
     match info.state {
         GitState::NotRepo => format!("{ORANGE}(not a git repository){NC}"),
         GitState::Clean | GitState::Dirty => {
-            let mut s = format!("🌿 {MAGENTA}{}{NC}", info.branch);
+            let mut s = format!("{GRAY}git{NC} {MAGENTA}{}{NC}", info.branch);
             match (info.ahead, info.behind) {
                 (Some(a), Some(b)) if a > 0 && b > 0 => {
                     s.push_str(&format!(" {GREEN}+{a}{NC}{RED}-{b}{NC}"));
@@ -75,7 +75,7 @@ pub fn build_files(changed: u32) -> String {
         return String::new();
     }
     let noun = if changed == 1 { "file" } else { "files" };
-    format!("✏️ {ORANGE}{changed} {noun}{NC}")
+    format!("{GRAY}chg{NC} {ORANGE}{changed} {noun}{NC}")
 }
 
 pub fn build_context(
@@ -95,12 +95,12 @@ pub fn build_context(
     let usage = format_number(current_usage);
     let size = format_number(context_size);
 
-    let emoji = if pct >= 96 {
-        "\x1b[5m💀\x1b[25m".to_string()
+    let prefix = if pct >= 96 {
+        format!("{RED}\x1b[5m!!\x1b[25m{NC}")
     } else if pct >= 86 {
-        "\x1b[5m🔥\x1b[25m".to_string()
+        format!("{RED}\x1b[5m!\x1b[25m{NC}")
     } else {
-        "📊".to_string()
+        format!("{GRAY}ctx{NC}")
     };
 
     let bar_and_pct = format!("{bar}{GRAY}]{NC} {pct}%");
@@ -118,14 +118,14 @@ pub fn build_context(
         String::new()
     };
 
-    format!("{emoji} {GRAY}[{NC}{bar_and_pct} {usage}/{size}{message_part}")
+    format!("{prefix} {GRAY}[{NC}{bar_and_pct} {usage}/{size}{message_part}")
 }
 
 pub fn build_cost(cost_usd: f64, config: &Config) -> String {
     if !config.cost || cost_usd == 0.0 {
         return String::new();
     }
-    format!("💰 {GREEN}${cost_usd:.2}{NC}")
+    format!("{GRAY}${NC} {GREEN}{cost_usd:.2}{NC}")
 }
 
 fn fill_solid(filled: usize, color: &str) -> String {
@@ -260,7 +260,7 @@ mod tests {
         let input = default_input(); // current_dir = "/tmp/test"
         let out = build_directory(&input);
         assert!(out.contains("test"), "should show last segment: {out}");
-        assert!(out.contains("📁"), "should show dir icon: {out}");
+        assert!(out.contains("dir"), "should show dir prefix: {out}");
     }
 
     #[test]
@@ -376,7 +376,7 @@ mod tests {
         let out = build_files(3);
         assert!(out.contains("3"));
         assert!(out.contains("files"));
-        assert!(out.contains("✏️"));
+        assert!(out.contains("chg"));
     }
 
     #[test]
@@ -490,9 +490,9 @@ mod tests {
         let mut cfg = default_config();
         cfg.messages = true;
         let out = build_context(&input, &cfg, 0, 0);
-        assert!(out.contains("📊"));
+        assert!(out.contains("ctx"));
         // message text comes from VeryLow tier (14%)
-        assert!(out.len() > "📊".len(), "should have message content");
+        assert!(out.len() > "ctx".len(), "should have message content");
     }
 
     #[test]
@@ -550,14 +550,14 @@ mod tests {
             let mut cfg = default_config();
             cfg.usage_bar_style = style;
             let out = build_context(&input, &cfg, 0, 0);
-            assert!(out.contains("💀"), "{style:?} at 96% must show 💀: {out}");
+            assert!(out.contains("!!"), "{style:?} at 96% must show !!: {out}");
             assert!(
                 out.contains("\x1b[5m"),
-                "{style:?} at 96% 💀 must blink: {out:?}"
+                "{style:?} at 96% !! must blink: {out:?}"
             );
             assert!(
-                !out.contains("📊"),
-                "{style:?} at 96% must not show 📊: {out}"
+                !out.contains("ctx"),
+                "{style:?} at 96% must not show ctx: {out}"
             );
         }
     }
@@ -576,8 +576,8 @@ mod tests {
             cfg.usage_bar_style = style;
             let out = build_context(&input, &cfg, 0, 0);
             assert!(
-                out.contains("\x1b[5m🔥\x1b[25m"),
-                "{style:?} at 90% must blink 🔥: {out:?}"
+                out.contains("\x1b[5m!\x1b[25m"),
+                "{style:?} at 90% must blink !: {out:?}"
             );
         }
     }
@@ -588,8 +588,8 @@ mod tests {
         input.context_percent = Some(96);
         let out = build_context(&input, &default_config(), 0, 0);
         assert!(
-            out.contains("\x1b[5m💀\x1b[25m"),
-            "96% must blink 💀: {out:?}"
+            out.contains("\x1b[5m!!\x1b[25m"),
+            "96% must blink !!: {out:?}"
         );
     }
 
@@ -600,10 +600,10 @@ mod tests {
         let mut cfg = default_config();
         cfg.usage_bar_style = BarStyle::Gsd;
         let out = build_context(&input, &cfg, 0, 0);
-        assert!(out.contains("📊"), "gsd non-critical must show 📊: {out}");
+        assert!(out.contains("ctx"), "gsd non-critical must show ctx: {out}");
         assert!(
-            !out.contains("💀"),
-            "gsd non-critical must not show 💀: {out}"
+            !out.contains("!!"),
+            "gsd non-critical must not show !!: {out}"
         );
     }
 
@@ -614,10 +614,13 @@ mod tests {
         let mut cfg = default_config();
         cfg.usage_bar_style = BarStyle::Gradient;
         let out = build_context(&input, &cfg, 0, 0);
-        assert!(out.contains("🔥"), "gradient critical must show 🔥: {out}");
         assert!(
-            !out.contains("📊"),
-            "gradient critical must not show 📊: {out}"
+            out.contains("\x1b[5m"),
+            "gradient critical must blink: {out:?}"
+        );
+        assert!(
+            !out.contains("ctx"),
+            "gradient critical must not show ctx: {out}"
         );
     }
 
@@ -626,9 +629,15 @@ mod tests {
         let mut input = default_input();
         input.context_percent = Some(90);
         let out = build_context(&input, &default_config(), 0, 0);
-        assert!(out.contains("🔥"), "plain at 90% must show 🔥: {out}");
-        assert!(!out.contains("📊"), "plain at 90% must not show 📊: {out}");
-        assert!(!out.contains("💀"), "plain at 90% must not show 💀: {out}");
+        assert!(
+            out.contains("\x1b[5m!\x1b[25m"),
+            "plain at 90% must blink !: {out:?}"
+        );
+        assert!(
+            !out.contains("ctx"),
+            "plain at 90% must not show ctx: {out}"
+        );
+        assert!(!out.contains("!!"), "plain at 90% must not show !!: {out}");
     }
 
     #[test]
@@ -636,8 +645,8 @@ mod tests {
         let mut input = default_input();
         input.context_percent = Some(85);
         let out = build_context(&input, &default_config(), 0, 0);
-        assert!(out.contains("📊"), "85% must show 📊: {out}");
-        assert!(!out.contains("🔥"), "85% must not show 🔥: {out}");
-        assert!(!out.contains("💀"), "85% must not show 💀: {out}");
+        assert!(out.contains("ctx"), "85% must show ctx: {out}");
+        assert!(!out.contains("\x1b[5m"), "85% must not blink: {out:?}");
+        assert!(!out.contains("!!"), "85% must not show !!: {out}");
     }
 }
