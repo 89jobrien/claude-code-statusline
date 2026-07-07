@@ -108,9 +108,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           LAST_STABLE=$(git describe --tags --abbrev=0 --exclude "*-dev.*" 2>/dev/null || echo "")
-          RANGE="${LAST_STABLE:+${LAST_STABLE}..}HEAD"
           touch CHANGELOG.md
-          git cliff --tag "$TAG" "$RANGE" --ignore-tags ".*-dev\..*" --prepend CHANGELOG.md
+          if [ -n "$LAST_STABLE" ]; then
+            git cliff --tag "$TAG" "${LAST_STABLE}..HEAD" --ignore-tags ".*-dev\..*" --prepend CHANGELOG.md
+          else
+            git cliff --tag "$TAG" --unreleased --ignore-tags ".*-dev\..*" --prepend CHANGELOG.md
+          fi
 
       - name: Bump Cargo.toml version
         if: inputs.type == 'stable' && steps.version.outputs.skipped != 'true'
@@ -335,8 +338,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           LAST_STABLE=$(git describe --tags --abbrev=0 --exclude "*-dev.*" 2>/dev/null || echo "")
-          RANGE="${LAST_STABLE:+${LAST_STABLE}..}HEAD"
-          CLIFF_BODY=$(NO_COLOR=1 git cliff --tag "$TAG" "$RANGE" --ignore-tags ".*-dev\..*" --strip all 2>/dev/null || true)
+          if [ -n "$LAST_STABLE" ]; then
+            CLIFF_BODY=$(NO_COLOR=1 git cliff --tag "$TAG" "${LAST_STABLE}..HEAD" --ignore-tags ".*-dev\..*" --strip all 2>/dev/null || true)
+          else
+            CLIFF_BODY=$(NO_COLOR=1 git cliff --tag "$TAG" --unreleased --ignore-tags ".*-dev\..*" --strip all 2>/dev/null || true)
+          fi
           CURL_CMD="curl -fsSL https://raw.githubusercontent.com/89jobrien/claude-code-statusline/main/install.sh | bash -s -- --version ${TAG}"
           PS_CMD="& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/89jobrien/claude-code-statusline/main/install.ps1'))) -Version ${TAG}"
           INSTALL_BLOCK=$(printf '## Install this version\n\n**macOS / Linux / WSL**\n```bash\n%s\n```\n\n**Windows — PowerShell**\n```powershell\n%s\n```\n\n---' "$CURL_CMD" "$PS_CMD")
