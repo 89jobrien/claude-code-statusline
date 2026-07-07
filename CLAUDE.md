@@ -6,16 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Rust binary statusline for Claude Code CLI displaying (in order):
 
-- Directory (📁)
-- Git branch (🌿) when in a Git repository
-- File changes (✏️) when present
-- Model name (🤖)
-- Context usage visualization with progress bar (📊)
-- Cost tracking (💰) when present and enabled
+- Directory
+- Git branch (when in a Git repository)
+- File changes (when present)
+- Model name
+- Context usage visualization with progress bar
+- Cost tracking (when present and enabled)
 
 **Primary file**: `src/main.rs`
-**Language**: Rust 1.96, edition 2024
+**Language**: Rust 1.96, edition 2024 (pinned via `rust-toolchain.toml`; requires `rustup`)
 **Binary name**: `statusline`
+**GitHub repo**: `89jobrien/claude-code-statusline`
 
 ## Development Commands
 
@@ -64,16 +65,16 @@ JSON stdin → input.rs (parse) → config.rs (load TOML) → git.rs (git status
 
 ### Module Map
 
-| Module | Responsibility |
-|--------|----------------|
-| `src/main.rs` | Entry point: `--print-defaults`, `--version`, `--configure-settings` flags or parse→build→render pipeline |
-| `src/configure.rs` | `--configure-settings <settings_path> <command_path>` — reads/merges/writes `~/.claude/settings.json` atomically |
-| `src/input.rs` | JSON parsing via `serde_json`; `validate_directory()` for security |
-| `src/config.rs` | TOML config loading; `BarStyle`/`Language` enums with fallback warnings; `print_defaults()` |
-| `src/git.rs` | Single `git status --porcelain=v2 --branch --untracked-files=all` call; `parse_porcelain_v2()` |
-| `src/components.rs` | All component builders (`build_model`, `build_directory`, `build_git`, `build_files`, `build_context`, `build_cost`); `build_all()` orchestrator |
-| `src/render.rs` | ANSI color constants, `BAR_FILLED`/`BAR_EMPTY`/`BAR_WIDTH`, `assemble()` |
-| `tests/integration.rs` | End-to-end tests spawning the compiled binary with fixture JSON |
+| Module                 | Responsibility                                                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/main.rs`          | Entry point: `--print-defaults`, `--version`, `--configure-settings` flags or parse→build→render pipeline                                        |
+| `src/configure.rs`     | `--configure-settings <settings_path> <command_path>` — reads/merges/writes `~/.claude/settings.json` atomically                                 |
+| `src/input.rs`         | JSON parsing via `serde_json`; `validate_directory()` for security                                                                               |
+| `src/config.rs`        | TOML config loading; `BarStyle`/`Language` enums with fallback warnings; `print_defaults()`                                                      |
+| `src/git.rs`           | Single `git status --porcelain=v2 --branch --untracked-files=all` call; `parse_porcelain_v2()`                                                   |
+| `src/components.rs`    | All component builders (`build_model`, `build_directory`, `build_git`, `build_files`, `build_context`, `build_cost`); `build_all()` orchestrator |
+| `src/render.rs`        | ANSI color constants, `BAR_FILLED`/`BAR_EMPTY`/`BAR_WIDTH`, `assemble()`                                                                         |
+| `tests/integration.rs` | End-to-end tests spawning the compiled binary with fixture JSON                                                                                  |
 
 ### Key Design Decisions
 
@@ -96,13 +97,14 @@ JSON stdin → input.rs (parse) → config.rs (load TOML) → git.rs (git status
 
 All fields are optional. Shown values are defaults.
 
-**Context window display:** The progress bar is scaled against the *usable* portion of the context window. Claude Code reserves ~16.5% as an autocompact buffer; the bar reaches 100% when autocompact triggers, not when the raw window is exhausted. Formula: `used = round((1 - max(0, remaining - 16.5) / 83.5) * 100)`.
+**Context window display:** The progress bar is scaled against the _usable_ portion of the context window. Claude Code reserves ~16.5% as an autocompact buffer; the bar reaches 100% when autocompact triggers, not when the raw window is exhausted. Formula: `used = round((1 - max(0, remaining - 16.5) / 83.5) * 100)`.
 
-**Blink at Critical (all bar styles):** At ≥86% the 🔥 emoji blinks via ANSI SGR 5 (`\x1b[5m`). At ≥96% the 💀 emoji blinks as well (same SGR 5 codes). Both apply regardless of `usage_bar_style`. This works in iTerm2, macOS Terminal, and kitty. **Ghostty does not render SGR 5 text blink** by design — the emoji appears without blinking. This is a known Ghostty limitation ([discussion #4258](https://github.com/ghostty-org/ghostty/discussions/4258)), not a bug in this binary.
+**Blink at Critical (all bar styles):** At ≥86% the fire emoji blinks via ANSI SGR 5 (`\x1b[5m`). At ≥96% the skull emoji blinks as well (same SGR 5 codes). Both apply regardless of `usage_bar_style`. This works in iTerm2, macOS Terminal, and kitty. **Ghostty does not render SGR 5 text blink** by design — the emoji appears without blinking. This is a known Ghostty limitation ([discussion #4258](https://github.com/ghostty-org/ghostty/discussions/4258)), not a bug in this binary.
 
 ## Security
 
 **`validate_directory()`** in `src/input.rs`:
+
 - Requires: absolute paths (must start with `/`)
 - Rejects: `..` traversal, `~` prefix, shell metacharacters (`$`, backtick, `;`), null bytes, relative paths
 - Used on: `workspace.current_dir` from JSON before passing to `git` subprocess
@@ -125,6 +127,7 @@ Each module has inline tests. Run with `cargo test --bins`.
 Spawns the compiled binary with fixture JSON via stdin, asserts on stdout. Uses `CARGO_BIN_EXE_statusline` to locate the binary. Run with `cargo test --test integration`.
 
 Test fixtures in `tests/fixtures/`:
+
 - `test-input.json`: minimal valid JSON payload
 - `claude-input-real.json`: real payload captured from Claude Code
 
@@ -137,7 +140,7 @@ pub fn build_new_component(input: &ClaudeInput) -> String {
     if condition {
         return String::new();
     }
-    format!("🆕 {CYAN}{}{NC}", input.some_field)
+    format!("{CYAN}{}{NC}", input.some_field)
 }
 ```
 
@@ -172,11 +175,11 @@ pub fn build_all(input: &ClaudeInput, git: &GitInfo, config: &Config) -> Vec<Str
 
 ## Dependencies
 
-| Crate | Version | Purpose |
-|-------|---------|---------|
-| `serde` + `serde_json` | 1 | JSON parsing (stdin input + settings.json) |
-| `toml` | 1 | TOML config file parsing |
-| `anyhow` | 1 | Error handling with context |
+| Crate                  | Version | Purpose                                    |
+| ---------------------- | ------- | ------------------------------------------ |
+| `serde` + `serde_json` | 1       | JSON parsing (stdin input + settings.json) |
+| `toml`                 | 1       | TOML config file parsing                   |
+| `anyhow`               | 1       | Error handling with context                |
 
 ## File Locations
 
@@ -198,8 +201,10 @@ pub fn build_all(input: &ClaudeInput, git: &GitInfo, config: &Config) -> Vec<Str
 │   └── fixtures/
 │       ├── test-input.json         # Minimal test fixture
 │       └── claude-input-real.json  # Real Claude Code payload
-├── install.sh              # macOS/Linux/WSL installer
-├── install.ps1             # Windows PowerShell installer (self-contained)
+├── install.sh              # macOS/Linux/WSL installer — downloads release binary from
+│                           #   github.com/89jobrien/claude-code-statusline, writes settings.json
+├── install.ps1             # Windows PowerShell installer — self-contained, no external deps,
+│                           #   downloads .exe release binary and writes settings.json
 ├── statusline.toml.example # Example config (generated by --print-defaults)
 └── assets/                 # Logo and demo images
 

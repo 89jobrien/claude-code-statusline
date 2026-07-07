@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GITHUB_REPO="glauberlima/claude-code-statusline"
+GITHUB_REPO="89jobrien/claude-code-statusline"
 GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
 GITHUB_DL_BASE="https://github.com/${GITHUB_REPO}/releases/download"
 MAX_RETRIES=3
@@ -16,11 +16,11 @@ NC='\033[0m'
 
 # ── Output helpers ─────────────────────────────────────────────────────────────
 success() { echo -e "${GREEN}✓${NC} $*"; }
-info()    { echo -e "${CYAN}→${NC} $*"; }
-warn()    { echo -e "${YELLOW}⚠${NC}  $*" >&2; }
-error()   { echo -e "${RED}✗${NC} $*" >&2; }
-muted()   { echo -e "${MUTED}  $*${NC}"; }
-step()    { echo -e "\n${CYAN}[$1/3]${NC} $2"; }
+info() { echo -e "${CYAN}→${NC} $*"; }
+warn() { echo -e "${YELLOW}⚠${NC}  $*" >&2; }
+error() { echo -e "${RED}✗${NC} $*" >&2; }
+muted() { echo -e "${MUTED}  $*${NC}"; }
+step() { echo -e "\n${CYAN}[$1/3]${NC} $2"; }
 
 # ── Argument parsing ───────────────────────────────────────────────────────────
 INSTALL_DIR="${HOME}/.claude"
@@ -28,23 +28,23 @@ VERSION_ARG=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --install-dir)
-            if [[ -z "${2:-}" ]]; then
-                error "--install-dir requires an argument."
-                exit 1
-            fi
-            INSTALL_DIR="$2"
-            shift 2
-            ;;
-        --version)
-            if [[ -z "${2:-}" ]]; then
-                error "--version requires an argument."
-                exit 1
-            fi
-            VERSION_ARG="$2"
-            shift 2
-            ;;
-        *) shift ;;
+    --install-dir)
+        if [[ -z "${2:-}" ]]; then
+            error "--install-dir requires an argument."
+            exit 1
+        fi
+        INSTALL_DIR="$2"
+        shift 2
+        ;;
+    --version)
+        if [[ -z "${2:-}" ]]; then
+            error "--version requires an argument."
+            exit 1
+        fi
+        VERSION_ARG="$2"
+        shift 2
+        ;;
+    *) shift ;;
     esac
 done
 
@@ -162,12 +162,12 @@ step 2 "Installing binary..."
 
 OS="$(uname -s)"
 case "${OS}" in
-    Darwin) ASSET="statusline-macos" ;;
-    Linux)  ASSET="statusline-linux-x64" ;;
-    *)
-        error "Unsupported OS: only macOS and Linux are supported."
-        exit 1
-        ;;
+Darwin) ASSET="statusline-macos" ;;
+Linux) ASSET="statusline-linux-x64" ;;
+*)
+    error "Unsupported OS: only macOS and Linux are supported."
+    exit 1
+    ;;
 esac
 
 if [[ -n "${VERSION_ARG}" ]]; then
@@ -244,7 +244,7 @@ fi
 if [[ -f "${TOML_FILE}" ]]; then
     info "Config already exists, skipping: ${TOML_FILE}"
 else
-    if ! "${BINARY_DEST}" --print-defaults > "${TOML_FILE}"; then
+    if ! "${BINARY_DEST}" --print-defaults >"${TOML_FILE}"; then
         error "Failed to generate ${TOML_FILE}"
         exit 1
     fi

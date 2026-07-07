@@ -3,12 +3,15 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+// Called only from cfg(debug_assertions) in main.rs; allow(dead_code) suppresses the release warning.
 #[allow(dead_code)]
 pub fn append(raw: &str) {
     let Some(home) = std::env::var_os("HOME") else {
         return;
     };
-    let path = PathBuf::from(home).join(".claude").join("statusline-debug.log");
+    let path = PathBuf::from(home)
+        .join(".claude")
+        .join("statusline-debug.log");
     append_to_path(&path, raw);
 }
 

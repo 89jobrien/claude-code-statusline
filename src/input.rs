@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+#[derive(Debug)]
 pub struct ClaudeInput {
     pub model_name: String,
     pub current_dir: String,
@@ -89,12 +90,11 @@ pub fn parse(json: &str) -> Result<ClaudeInput> {
     //   used = round(100 - usable_remaining)
     // Credit: normalization approach from gsd-statusline (https://github.com/open-gsd/gsd-core)
     const AUTO_COMPACT_BUFFER_PCT: f64 = 16.5;
-    let context_percent = cw
-        .and_then(|c| c.remaining_percentage)
-        .map(|r| {
-            let usable_remaining = ((r - AUTO_COMPACT_BUFFER_PCT) / (100.0 - AUTO_COMPACT_BUFFER_PCT) * 100.0).max(0.0);
-            (100.0 - usable_remaining).round().clamp(0.0, 100.0) as u8
-        });
+    let context_percent = cw.and_then(|c| c.remaining_percentage).map(|r| {
+        let usable_remaining =
+            ((r - AUTO_COMPACT_BUFFER_PCT) / (100.0 - AUTO_COMPACT_BUFFER_PCT) * 100.0).max(0.0);
+        (100.0 - usable_remaining).round().clamp(0.0, 100.0) as u8
+    });
 
     let cost_usd = raw
         .cost
@@ -120,7 +120,7 @@ pub fn validate_directory(path: &str) -> bool {
     if path.is_empty() {
         return false;
     }
-    if path.contains('\0') {
+    if path.contains('\0') || path.contains('\n') {
         return false;
     }
     if path.starts_with('~') {

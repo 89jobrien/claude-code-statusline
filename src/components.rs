@@ -8,18 +8,16 @@ use crate::render::{
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn build_all(input: &ClaudeInput, git: &GitInfo, config: &Config) -> Vec<String> {
-    let now_secs = || {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-    };
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let wave_time = if matches!(config.usage_bar_style, BarStyle::Rainbow) {
-        now_secs()
+        now_secs
     } else {
         0
     };
-    let message_time = if config.messages { now_secs() } else { 0 };
+    let message_time = if config.messages { now_secs } else { 0 };
 
     vec![
         build_directory(input),
@@ -54,7 +52,20 @@ pub fn build_git(info: &GitInfo) -> String {
     match info.state {
         GitState::NotRepo => format!("{ORANGE}(not a git repository){NC}"),
         GitState::Clean | GitState::Dirty => {
-            format!("🌿 {MAGENTA}{}{NC}", info.branch)
+            let mut s = format!("🌿 {MAGENTA}{}{NC}", info.branch);
+            match (info.ahead, info.behind) {
+                (Some(a), Some(b)) if a > 0 && b > 0 => {
+                    s.push_str(&format!(" {GREEN}+{a}{NC}{RED}-{b}{NC}"));
+                }
+                (Some(a), _) if a > 0 => {
+                    s.push_str(&format!(" {GREEN}+{a}{NC}"));
+                }
+                (_, Some(b)) if b > 0 => {
+                    s.push_str(&format!(" {RED}-{b}{NC}"));
+                }
+                _ => {}
+            }
+            s
         }
     }
 }
@@ -63,13 +74,21 @@ pub fn build_files(changed: u32) -> String {
     if changed == 0 {
         return String::new();
     }
-    format!("✏️ {ORANGE}{changed} files{NC}")
+    let noun = if changed == 1 { "file" } else { "files" };
+    format!("✏️ {ORANGE}{changed} {noun}{NC}")
 }
 
-pub fn build_context(input: &ClaudeInput, config: &Config, wave_time: u64, message_time: u64) -> String {
-    let (Some(pct), Some(current_usage), Some(context_size)) =
-        (input.context_percent, input.current_usage, input.context_size)
-    else {
+pub fn build_context(
+    input: &ClaudeInput,
+    config: &Config,
+    wave_time: u64,
+    message_time: u64,
+) -> String {
+    let (Some(pct), Some(current_usage), Some(context_size)) = (
+        input.context_percent,
+        input.current_usage,
+        input.context_size,
+    ) else {
         return String::new();
     };
     let bar = build_usage_bar(pct, config.usage_bar_style, wave_time);
@@ -284,9 +303,15 @@ mod tests {
         let bar = build_usage_bar(100, BarStyle::Gradient, 0);
         assert!(bar.contains('█'));
         // first color code must be GRADIENT_COLORS[0] = 46 (green)
-        assert!(bar.contains("\x1b[38;5;46m"), "first char must be green (46)");
+        assert!(
+            bar.contains("\x1b[38;5;46m"),
+            "first char must be green (46)"
+        );
         // last filled color code must be GRADIENT_COLORS[10] = 196 (red)
-        assert!(bar.contains("\x1b[38;5;196m"), "last char must be red (196)");
+        assert!(
+            bar.contains("\x1b[38;5;196m"),
+            "last char must be red (196)"
+        );
     }
 
     #[test]
@@ -296,7 +321,10 @@ mod tests {
         assert!(bar.contains('█'));
         assert!(bar.contains('░'));
         // 196 is the last red — should not appear at 50%
-        assert!(!bar.contains("\x1b[38;5;196m"), "red (196) must not appear at 50%");
+        assert!(
+            !bar.contains("\x1b[38;5;196m"),
+            "red (196) must not appear at 50%"
+        );
     }
 
     #[test]
@@ -352,11 +380,20 @@ mod tests {
     }
 
     #[test]
+    fn files_singular_when_one_change() {
+        let out = build_files(1);
+        assert!(out.contains("1 file"), "should use singular: {out}");
+        assert!(!out.contains("1 files"), "must not use plural for 1: {out}");
+    }
+
+    #[test]
     fn git_not_repo_shows_message() {
         let info = GitInfo {
             state: GitState::NotRepo,
             branch: String::new(),
             changed_files: 0,
+            ahead: None,
+            behind: None,
         };
         let out = build_git(&info);
         assert!(out.contains("not a git repository"));
@@ -368,6 +405,8 @@ mod tests {
             state: GitState::Clean,
             branch: "main".to_string(),
             changed_files: 0,
+            ahead: None,
+            behind: None,
         };
         let out = build_git(&info);
         assert!(out.contains("main"));
@@ -379,9 +418,70 @@ mod tests {
             state: GitState::NotRepo,
             branch: String::new(),
             changed_files: 0,
+            ahead: None,
+            behind: None,
         };
         let out = build_git(&info);
-        assert!(!out.starts_with(' '), "NotRepo output must not start with space");
+        assert!(
+            !out.starts_with(' '),
+            "NotRepo output must not start with space"
+        );
+    }
+
+    #[test]
+    fn git_shows_ahead_count() {
+        let info = GitInfo {
+            state: GitState::Clean,
+            branch: "main".to_string(),
+            changed_files: 0,
+            ahead: Some(3),
+            behind: Some(0),
+        };
+        let out = build_git(&info);
+        assert!(out.contains("+3"), "should show ahead count: {out}");
+        assert!(!out.contains('-'), "should not show behind when 0: {out}");
+    }
+
+    #[test]
+    fn git_shows_behind_count() {
+        let info = GitInfo {
+            state: GitState::Clean,
+            branch: "main".to_string(),
+            changed_files: 0,
+            ahead: Some(0),
+            behind: Some(2),
+        };
+        let out = build_git(&info);
+        assert!(out.contains("-2"), "should show behind count: {out}");
+        assert!(!out.contains('+'), "should not show ahead when 0: {out}");
+    }
+
+    #[test]
+    fn git_shows_both_ahead_and_behind() {
+        let info = GitInfo {
+            state: GitState::Clean,
+            branch: "main".to_string(),
+            changed_files: 0,
+            ahead: Some(2),
+            behind: Some(1),
+        };
+        let out = build_git(&info);
+        assert!(out.contains("+2"), "should show ahead: {out}");
+        assert!(out.contains("-1"), "should show behind: {out}");
+    }
+
+    #[test]
+    fn git_no_upstream_shows_no_divergence() {
+        let info = GitInfo {
+            state: GitState::Clean,
+            branch: "main".to_string(),
+            changed_files: 0,
+            ahead: None,
+            behind: None,
+        };
+        let out = build_git(&info);
+        assert!(!out.contains('+'), "no upstream should not show +: {out}");
+        assert!(!out.contains('-'), "no upstream should not show -: {out}");
     }
 
     #[test]
@@ -414,14 +514,20 @@ mod tests {
     fn fill_gsd_medium_is_yellow() {
         // 60% → Medium → yellow \x1b[0;33m
         let bar = build_usage_bar(60, BarStyle::Gsd, 0);
-        assert!(bar.contains("\x1b[0;33m"), "Medium gsd must use yellow: {bar:?}");
+        assert!(
+            bar.contains("\x1b[0;33m"),
+            "Medium gsd must use yellow: {bar:?}"
+        );
     }
 
     #[test]
     fn fill_gsd_high_is_orange_256() {
         // 80% → High → 256-color orange 208
         let bar = build_usage_bar(80, BarStyle::Gsd, 0);
-        assert!(bar.contains("\x1b[38;5;208m"), "High gsd must use 256-color orange: {bar:?}");
+        assert!(
+            bar.contains("\x1b[38;5;208m"),
+            "High gsd must use 256-color orange: {bar:?}"
+        );
     }
 
     #[test]
@@ -435,13 +541,24 @@ mod tests {
     fn context_skull_at_96_all_styles() {
         let mut input = default_input();
         input.context_percent = Some(96);
-        for style in [BarStyle::Plain, BarStyle::Rainbow, BarStyle::Gradient, BarStyle::Gsd] {
+        for style in [
+            BarStyle::Plain,
+            BarStyle::Rainbow,
+            BarStyle::Gradient,
+            BarStyle::Gsd,
+        ] {
             let mut cfg = default_config();
             cfg.usage_bar_style = style;
             let out = build_context(&input, &cfg, 0, 0);
             assert!(out.contains("💀"), "{style:?} at 96% must show 💀: {out}");
-            assert!(out.contains("\x1b[5m"), "{style:?} at 96% 💀 must blink: {out:?}");
-            assert!(!out.contains("📊"), "{style:?} at 96% must not show 📊: {out}");
+            assert!(
+                out.contains("\x1b[5m"),
+                "{style:?} at 96% 💀 must blink: {out:?}"
+            );
+            assert!(
+                !out.contains("📊"),
+                "{style:?} at 96% must not show 📊: {out}"
+            );
         }
     }
 
@@ -449,11 +566,19 @@ mod tests {
     fn context_fire_blinks_all_styles() {
         let mut input = default_input();
         input.context_percent = Some(90);
-        for style in [BarStyle::Plain, BarStyle::Rainbow, BarStyle::Gradient, BarStyle::Gsd] {
+        for style in [
+            BarStyle::Plain,
+            BarStyle::Rainbow,
+            BarStyle::Gradient,
+            BarStyle::Gsd,
+        ] {
             let mut cfg = default_config();
             cfg.usage_bar_style = style;
             let out = build_context(&input, &cfg, 0, 0);
-            assert!(out.contains("\x1b[5m🔥\x1b[25m"), "{style:?} at 90% must blink 🔥: {out:?}");
+            assert!(
+                out.contains("\x1b[5m🔥\x1b[25m"),
+                "{style:?} at 90% must blink 🔥: {out:?}"
+            );
         }
     }
 
@@ -462,7 +587,10 @@ mod tests {
         let mut input = default_input();
         input.context_percent = Some(96);
         let out = build_context(&input, &default_config(), 0, 0);
-        assert!(out.contains("\x1b[5m💀\x1b[25m"), "96% must blink 💀: {out:?}");
+        assert!(
+            out.contains("\x1b[5m💀\x1b[25m"),
+            "96% must blink 💀: {out:?}"
+        );
     }
 
     #[test]
@@ -473,7 +601,10 @@ mod tests {
         cfg.usage_bar_style = BarStyle::Gsd;
         let out = build_context(&input, &cfg, 0, 0);
         assert!(out.contains("📊"), "gsd non-critical must show 📊: {out}");
-        assert!(!out.contains("💀"), "gsd non-critical must not show 💀: {out}");
+        assert!(
+            !out.contains("💀"),
+            "gsd non-critical must not show 💀: {out}"
+        );
     }
 
     #[test]
@@ -484,9 +615,11 @@ mod tests {
         cfg.usage_bar_style = BarStyle::Gradient;
         let out = build_context(&input, &cfg, 0, 0);
         assert!(out.contains("🔥"), "gradient critical must show 🔥: {out}");
-        assert!(!out.contains("📊"), "gradient critical must not show 📊: {out}");
+        assert!(
+            !out.contains("📊"),
+            "gradient critical must not show 📊: {out}"
+        );
     }
-
 
     #[test]
     fn context_plain_fire_at_critical() {
@@ -507,5 +640,4 @@ mod tests {
         assert!(!out.contains("🔥"), "85% must not show 🔥: {out}");
         assert!(!out.contains("💀"), "85% must not show 💀: {out}");
     }
-
 }

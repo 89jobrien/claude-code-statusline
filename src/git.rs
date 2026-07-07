@@ -5,6 +5,10 @@ pub struct GitInfo {
     pub state: GitState,
     pub branch: String,
     pub changed_files: u32,
+    /// Commits ahead of upstream. None when no upstream is set.
+    pub ahead: Option<u32>,
+    /// Commits behind upstream. None when no upstream is set.
+    pub behind: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -20,6 +24,8 @@ impl Default for GitInfo {
             state: GitState::NotRepo,
             branch: String::new(),
             changed_files: 0,
+            ahead: None,
+            behind: None,
         }
     }
 }
@@ -57,11 +63,20 @@ pub(crate) fn parse_porcelain_v2(output: &str) -> GitInfo {
 
     let mut branch = String::from("(detached HEAD)");
     let mut changed_files: u32 = 0;
+    let mut ahead: Option<u32> = None;
+    let mut behind: Option<u32> = None;
 
     for line in output.lines() {
         if let Some(rest) = line.strip_prefix("# branch.head ") {
             if rest != "(detached)" {
                 branch = rest.to_string();
+            }
+        } else if let Some(rest) = line.strip_prefix("# branch.ab ") {
+            // format: "+A -B"
+            let mut parts = rest.split_whitespace();
+            if let (Some(a), Some(b)) = (parts.next(), parts.next()) {
+                ahead = a.trim_start_matches('+').parse().ok();
+                behind = b.trim_start_matches('-').parse().ok();
             }
         } else if !line.starts_with('#') && !line.is_empty() {
             changed_files += 1;
@@ -78,6 +93,8 @@ pub(crate) fn parse_porcelain_v2(output: &str) -> GitInfo {
         state,
         branch,
         changed_files,
+        ahead,
+        behind,
     }
 }
 
@@ -92,6 +109,8 @@ mod tests {
         assert!(matches!(info.state, GitState::Clean));
         assert_eq!(info.branch, "main");
         assert_eq!(info.changed_files, 0);
+        assert_eq!(info.ahead, Some(0));
+        assert_eq!(info.behind, Some(0));
     }
 
     #[test]
@@ -101,6 +120,8 @@ mod tests {
         assert!(matches!(info.state, GitState::Dirty));
         assert_eq!(info.branch, "feature/x");
         assert_eq!(info.changed_files, 2);
+        assert_eq!(info.ahead, Some(2));
+        assert_eq!(info.behind, Some(1));
     }
 
     #[test]
@@ -123,5 +144,23 @@ mod tests {
         let info = parse_porcelain_v2(output);
         assert!(matches!(info.state, GitState::Clean));
         assert_eq!(info.branch, "main");
+        assert_eq!(info.ahead, None);
+        assert_eq!(info.behind, None);
+    }
+
+    #[test]
+    fn ahead_only() {
+        let output = "# branch.oid abc123\n# branch.head main\n# branch.ab +3 -0\n";
+        let info = parse_porcelain_v2(output);
+        assert_eq!(info.ahead, Some(3));
+        assert_eq!(info.behind, Some(0));
+    }
+
+    #[test]
+    fn behind_only() {
+        let output = "# branch.oid abc123\n# branch.head main\n# branch.ab +0 -5\n";
+        let info = parse_porcelain_v2(output);
+        assert_eq!(info.ahead, Some(0));
+        assert_eq!(info.behind, Some(5));
     }
 }
